@@ -94,7 +94,7 @@ export const EnableConfidentialContainers: FC = () => {
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
               {t(
-                'This turns on the confidential feature gate in the OpenShift sandboxed containers operator. The operator then installs the kata-cc runtime on your TEE nodes.',
+                'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
               )}
             </p>
             <Alert

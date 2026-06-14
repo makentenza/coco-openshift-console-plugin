@@ -165,7 +165,12 @@ export const TrusteeConfigModel: K8sModel = {
 // ---- Well-known names / locations ----
 /** Where the OpenShift sandboxed containers operator and its config live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
-/** ConfigMap that enables confidential containers (data.confidential: "true"). */
+/**
+ * Configuration ConfigMap that enables confidential containers (data.confidential: "true"),
+ * which makes the OSC operator install the kata-cc runtime. The ConfigMap keeps the name
+ * "osc-feature-gates" for historical reasons; OSC now calls these "configuration options",
+ * not "feature gates" — confidential containers is a supported (GA) option.
+ */
 export const OSC_FEATURE_GATES_CM = 'osc-feature-gates';
 /** Default namespace for the Red Hat build of Trustee operator. */
 export const TRUSTEE_NAMESPACE = 'trustee-operator-system';

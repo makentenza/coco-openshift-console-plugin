@@ -100,9 +100,9 @@ const CocoSetup: FC = () => {
       title: t('Confidential containers enabled'),
       status: ccEnabled ? 'done' : 'info',
       detail: ccEnabled
-        ? t('The confidential feature gate is on, so the operator installs the kata-cc runtime.')
+        ? t('Confidential containers are enabled, so the operator installs the kata-cc runtime.')
         : t(
-            'Turn on the confidential feature gate in the OpenShift sandboxed containers operator. The operator then installs the kata-cc runtime when you create a KataConfig.',
+            'Enable confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
           ),
       node: ccEnabled ? undefined : <EnableConfidentialContainers />,
     },

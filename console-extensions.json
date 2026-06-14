@@ -1,0 +1,330 @@
+[
+  {
+    "type": "console.flag/model",
+    "properties": {
+      "flag": "COCO_KATACONFIG",
+      "model": {
+        "group": "kataconfiguration.openshift.io",
+        "version": "v1",
+        "kind": "KataConfig"
+      }
+    }
+  },
+  {
+    "type": "console.flag/model",
+    "properties": {
+      "flag": "COCO_TRUSTEECONFIG",
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      }
+    }
+  },
+  {
+    "type": "console.model-metadata",
+    "properties": {
+      "model": {
+        "group": "kataconfiguration.openshift.io",
+        "version": "v1",
+        "kind": "KataConfig"
+      },
+      "abbr": "KC",
+      "label": "KataConfig",
+      "labelPlural": "KataConfigs",
+      "color": "#0066cc"
+    }
+  },
+  {
+    "type": "console.model-metadata",
+    "properties": {
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      },
+      "abbr": "TC",
+      "label": "TrusteeConfig",
+      "labelPlural": "TrusteeConfigs",
+      "color": "#6753ac"
+    }
+  },
+
+  {
+    "type": "console.navigation/section",
+    "properties": {
+      "id": "confidential-containers",
+      "perspective": "admin",
+      "name": "%plugin__coco-openshift-console-plugin~Confidential Containers%",
+      "insertAfter": "sandboxes"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-overview",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~Overview%",
+      "href": "/confidential-containers"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-workloads",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~Workloads%",
+      "href": "/confidential-containers/workloads"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-tee-nodes",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~TEE nodes%",
+      "href": "/confidential-containers/tee-nodes"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-runtime-classes",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~Runtime classes%",
+      "href": "/confidential-containers/runtime-classes"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-initdata",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~Initdata builder%",
+      "href": "/confidential-containers/initdata"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "cc-create",
+      "perspective": "admin",
+      "section": "confidential-containers",
+      "name": "%plugin__coco-openshift-console-plugin~Create workload%",
+      "href": "/confidential-containers/workloads/new"
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers",
+      "component": { "$codeRef": "ConfidentialContainersOverview" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/workloads",
+      "component": { "$codeRef": "ConfidentialWorkloadsList" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/tee-nodes",
+      "component": { "$codeRef": "TeeNodesList" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/runtime-classes",
+      "component": { "$codeRef": "RuntimeClassesList" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/initdata",
+      "component": { "$codeRef": "InitdataBuilder" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/workloads/new",
+      "component": { "$codeRef": "CreateConfidentialWorkload" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/confidential-containers/verify/:ns/:name",
+      "component": { "$codeRef": "VerifyAttestation" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+  {
+    "type": "console.action/resource-provider",
+    "properties": {
+      "model": { "version": "v1", "kind": "Pod" },
+      "provider": { "$codeRef": "ccActions.useCcPodActions" }
+    },
+    "flags": { "required": ["COCO_KATACONFIG"] }
+  },
+
+  {
+    "type": "console.navigation/section",
+    "properties": {
+      "id": "trustee",
+      "perspective": "admin",
+      "name": "%plugin__coco-openshift-console-plugin~Trustee (Attestation)%",
+      "insertAfter": "confidential-containers"
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "trustee-overview",
+      "perspective": "admin",
+      "section": "trustee",
+      "name": "%plugin__coco-openshift-console-plugin~Overview%",
+      "href": "/trustee"
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "trustee-deploy",
+      "perspective": "admin",
+      "section": "trustee",
+      "name": "%plugin__coco-openshift-console-plugin~Deploy%",
+      "href": "/trustee/deploy"
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.navigation/resource-ns",
+    "properties": {
+      "id": "trustee-configs",
+      "perspective": "admin",
+      "section": "trustee",
+      "name": "%plugin__coco-openshift-console-plugin~TrusteeConfigs%",
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/trustee",
+      "component": { "$codeRef": "TrusteeOverview" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/trustee/deploy",
+      "component": { "$codeRef": "DeployTrusteeWizard" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.tab/horizontalNav",
+    "properties": {
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      },
+      "page": {
+        "name": "%plugin__coco-openshift-console-plugin~Policies%",
+        "href": "policies"
+      },
+      "component": { "$codeRef": "TrusteePoliciesTab" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.tab/horizontalNav",
+    "properties": {
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      },
+      "page": {
+        "name": "%plugin__coco-openshift-console-plugin~Reference values%",
+        "href": "reference-values"
+      },
+      "component": { "$codeRef": "TrusteeReferenceValuesTab" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.tab/horizontalNav",
+    "properties": {
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      },
+      "page": {
+        "name": "%plugin__coco-openshift-console-plugin~Delivered secrets%",
+        "href": "secrets"
+      },
+      "component": { "$codeRef": "TrusteeSecretsTab" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  },
+  {
+    "type": "console.tab/horizontalNav",
+    "properties": {
+      "model": {
+        "group": "trustee.confidentialcontainers.org",
+        "version": "v1",
+        "kind": "TrusteeConfig"
+      },
+      "page": {
+        "name": "%plugin__coco-openshift-console-plugin~GPU attestation%",
+        "href": "gpu-attestation"
+      },
+      "component": { "$codeRef": "TrusteeGpuTab" }
+    },
+    "flags": { "required": ["COCO_TRUSTEECONFIG"] }
+  }
+]

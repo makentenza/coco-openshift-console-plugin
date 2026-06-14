@@ -1,0 +1,167 @@
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
+
+/** A node.k8s.io/v1 RuntimeClass. */
+export type RuntimeClassKind = K8sResourceCommon & {
+  handler?: string;
+  overhead?: {
+    podFixed?: Record<string, string>;
+  };
+};
+
+/** A v1 ConfigMap (we only read .data). */
+export type ConfigMapKind = K8sResourceCommon & {
+  data?: Record<string, string>;
+};
+
+/** A v1 Secret (we read .type / key names, never values). */
+export type SecretKind = K8sResourceCommon & {
+  data?: Record<string, string>;
+  type?: string;
+};
+
+/** kataconfiguration.openshift.io/v1 KataConfig (cluster-scoped singleton). */
+export type KataConfigKind = K8sResourceCommon & {
+  spec?: {
+    enablePeerPods?: boolean;
+    logLevel?: string;
+    checkNodeEligibility?: boolean;
+  };
+  status?: {
+    conditions?: {
+      type: string;
+      status: string;
+      reason?: string;
+      message?: string;
+      lastTransitionTime?: string;
+    }[];
+    kataNodes?: {
+      nodeCount?: number;
+      readyNodeCount?: number;
+      installed?: string[];
+      installing?: string[];
+      waitingToInstall?: string[];
+      failedToInstall?: string[];
+    };
+    runtimeClasses?: string[];
+    waitingForMcoToStart?: boolean;
+  };
+};
+
+/** A v1 Node — we read labels (TEE/GPU-CC) and Ready condition. */
+export type NodeKind = K8sResourceCommon & {
+  status?: {
+    conditions?: { type: string; status: string }[];
+  };
+};
+
+export type ContainerStatusKind = {
+  name: string;
+  ready: boolean;
+  restartCount: number;
+  state?: {
+    waiting?: { reason?: string; message?: string };
+    running?: { startedAt?: string };
+    terminated?: { exitCode?: number; reason?: string; finishedAt?: string };
+  };
+  image?: string;
+};
+
+/** Minimal Pod shape we rely on. */
+export type PodKind = K8sResourceCommon & {
+  spec?: {
+    runtimeClassName?: string;
+    nodeName?: string;
+    containers?: { name: string; image?: string }[];
+  };
+  status?: {
+    phase?: string;
+    podIP?: string;
+    containerStatuses?: ContainerStatusKind[];
+  };
+};
+
+/** Minimal Deployment shape we rely on. */
+export type DeploymentKind = K8sResourceCommon & {
+  spec?: {
+    replicas?: number;
+    selector?: { matchLabels?: Record<string, string> };
+    template?: {
+      metadata?: { annotations?: Record<string, string> };
+      spec?: {
+        runtimeClassName?: string;
+        containers?: { name: string; image?: string }[];
+      };
+    };
+  };
+  status?: {
+    replicas?: number;
+    readyReplicas?: number;
+    availableReplicas?: number;
+  };
+};
+
+export type DaemonSetKind = K8sResourceCommon & {
+  status?: {
+    desiredNumberScheduled?: number;
+    numberReady?: number;
+    numberAvailable?: number;
+  };
+};
+
+/** trustee.confidentialcontainers.org/v1 TrusteeConfig — the high-level attestation CR. */
+export type TrusteeConfigKind = K8sResourceCommon & {
+  spec?: {
+    profileType?: 'Permissive' | 'Restricted';
+    kbsServiceType?: string;
+    httpsSpec?: { tlsSecretName?: string };
+    attestationTokenVerificationSpec?: { tlsSecretName?: string };
+  };
+  status?: {
+    isReady?: boolean;
+    conditions?: { type: string; status: string; reason?: string; message?: string }[];
+  };
+};
+
+/** trustee.confidentialcontainers.org/v1alpha1 KbsConfig — generated from TrusteeConfig (advanced). */
+export type KbsConfigKind = K8sResourceCommon & {
+  spec?: {
+    kbsServiceType?: string;
+    kbsSecretResources?: string[];
+  };
+  status?: {
+    isReady?: boolean;
+  };
+};
+
+/** Confidential classification derived from a RuntimeClass (name + handler). */
+export type CcClass = 'confidential' | 'confidential-gpu' | 'peerpod' | 'sandbox' | 'unknown';
+
+/** TEE technology detected on a node from NFD labels. */
+export type TeeType = 'tdx' | 'snp' | 'none';
+
+/** A node that can host confidential workloads. */
+export interface TeeNode {
+  name: string;
+  tee: TeeType;
+  gpuCcReady: boolean;
+  ready: boolean;
+  obj: NodeKind;
+}
+
+/** A normalized row in the Confidential Workloads table (Pod or Deployment). */
+export interface CcWorkload {
+  uid: string;
+  kind: 'Pod' | 'Deployment';
+  name: string;
+  namespace: string;
+  runtimeClass: string;
+  ccClass: CcClass;
+  /** Whether the pod carries initdata (cc_init_data annotation). */
+  hasInitData: boolean;
+  node?: string;
+  status: string;
+  restarts?: number;
+  ready?: string; // e.g. "2/3" for deployments
+  creationTimestamp?: string;
+  obj: PodKind | DeploymentKind;
+}

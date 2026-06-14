@@ -39,6 +39,13 @@ export const ClusterVersionGVK: K8sGroupVersionKind = {
   kind: 'ClusterVersion',
 };
 
+/** machineconfiguration.openshift.io/v1 MachineConfig — sets host kernel arguments. */
+export const MachineConfigGVK: K8sGroupVersionKind = {
+  group: 'machineconfiguration.openshift.io',
+  version: 'v1',
+  kind: 'MachineConfig',
+};
+
 export const NodeFeatureRuleModel: K8sModel = {
   apiGroup: 'nfd.openshift.io',
   apiVersion: 'v1alpha1',
@@ -60,6 +67,18 @@ export const NodeFeatureDiscoveryModel: K8sModel = {
   abbr: 'NFD',
   label: 'NodeFeatureDiscovery',
   labelPlural: 'NodeFeatureDiscoveries',
+  crd: true,
+};
+
+export const MachineConfigModel: K8sModel = {
+  apiGroup: 'machineconfiguration.openshift.io',
+  apiVersion: 'v1',
+  kind: 'MachineConfig',
+  plural: 'machineconfigs',
+  namespaced: false,
+  abbr: 'MC',
+  label: 'MachineConfig',
+  labelPlural: 'MachineConfigs',
   crd: true,
 };
 

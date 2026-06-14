@@ -5,6 +5,8 @@ import {
   CardTitle,
   EmptyState,
   EmptyStateBody,
+  Flex,
+  FlexItem,
   Label,
   PageSection,
   Skeleton,
@@ -16,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { useTeeNodes } from '../k8s/hooks';
 import { NodeGVK } from '../k8s/resources';
 import { teeLabel } from '../utils/tee';
+import { EnableTdxHost } from './EnableTdxHost';
 import { EnableTeeDetection } from './EnableTeeDetection';
 import './coco.css';
 
@@ -27,7 +30,14 @@ const TeeNodesList: FC = () => {
     <>
       <DocumentTitle>{t('TEE-capable nodes')}</DocumentTitle>
       <ListPageHeader title={t('TEE-capable nodes')}>
-        <EnableTeeDetection />
+        <Flex gap={{ default: 'gapSm' }}>
+          <FlexItem>
+            <EnableTeeDetection />
+          </FlexItem>
+          <FlexItem>
+            <EnableTdxHost />
+          </FlexItem>
+        </Flex>
       </ListPageHeader>
       <PageSection>
         {!loaded ? (
@@ -39,9 +49,18 @@ const TeeNodesList: FC = () => {
                 'No nodes are labeled with a Trusted Execution Environment yet. Use Enable TEE detection to set up Node Feature Discovery and label Intel TDX or AMD SEV-SNP nodes.',
               )}
             </EmptyStateBody>
-            <div className="coco-openshift-console-plugin__mt">
-              <EnableTeeDetection />
-            </div>
+            <Flex
+              gap={{ default: 'gapSm' }}
+              justifyContent={{ default: 'justifyContentCenter' }}
+              className="coco-openshift-console-plugin__mt"
+            >
+              <FlexItem>
+                <EnableTeeDetection />
+              </FlexItem>
+              <FlexItem>
+                <EnableTdxHost />
+              </FlexItem>
+            </Flex>
           </EmptyState>
         ) : (
           <Table aria-label={t('TEE-capable nodes')} variant="compact">

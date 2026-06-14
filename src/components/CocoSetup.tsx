@@ -31,6 +31,7 @@ import {
 import { KataConfigGVK } from '../k8s/resources';
 import { isConfidentialRuntimeClass } from '../utils/runtime';
 import { kataInstallSummary } from '../utils/status';
+import { EnableConfidentialContainers } from './EnableConfidentialContainers';
 import './coco.css';
 
 type Status = 'done' | 'todo' | 'warn' | 'info';
@@ -40,6 +41,8 @@ interface Step {
   status: Status;
   detail: ReactNode;
   action?: { label: string; href: string };
+  /** Inline action element rendered in the step's action area (e.g. a one-click enable button). */
+  node?: ReactNode;
 }
 
 const StatusIcon: FC<{ status: Status }> = ({ status }) => {
@@ -86,7 +89,7 @@ const CocoSetup: FC = () => {
         teeNodes.length > 0
           ? t('{{count}} node(s) are labeled as TEE-capable.', { count: teeNodes.length })
           : t(
-              'Detect and label your Intel TDX or AMD SEV-SNP nodes with Node Feature Discovery. Confidential workloads only schedule onto these nodes.',
+              'Detect and label your Intel TDX or AMD SEV-SNP nodes with Node Feature Discovery. If a node has TDX enabled in firmware but is not detected, activate the TDX host kernel arguments first. Confidential workloads only schedule onto these nodes.',
             ),
       action: {
         label: teeNodes.length > 0 ? t('View TEE nodes') : t('Detect TEE nodes'),
@@ -101,6 +104,7 @@ const CocoSetup: FC = () => {
         : t(
             'Turn on the confidential feature gate in the OpenShift sandboxed containers operator. The operator then installs the kata-cc runtime when you create a KataConfig.',
           ),
+      node: ccEnabled ? undefined : <EnableConfidentialContainers />,
     },
     {
       title: t('kata-cc runtime installed'),
@@ -228,6 +232,7 @@ const CocoSetup: FC = () => {
                         </Link>
                       </FlexItem>
                     )}
+                    {step.node && <FlexItem>{step.node}</FlexItem>}
                   </Flex>
                 </FlexItem>
               ))}

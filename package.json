@@ -1,7 +1,7 @@
 {
   "name": "coco-openshift-console-plugin",
   "version": "0.0.1",
-  "description": "Management, attestation, and observability for OpenShift confidential containers (Kata + TEE) and the Red Hat build of Trustee.",
+  "description": "Create, configure, manage, and observe OpenShift confidential containers (Kata + TEE). Attestation (Trustee) lives in the separate trustee-openshift-console-plugin.",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -75,7 +75,7 @@
     "name": "coco-openshift-console-plugin",
     "version": "0.0.1",
     "displayName": "OpenShift Confidential Containers",
-    "description": "Create, configure, manage, and observe confidential containers (Kata + TEE) and the Red Hat build of Trustee attestation service.",
+    "description": "Create, configure, manage, and observe confidential containers (Kata + TEE) on OpenShift sandboxed containers.",
     "exposedModules": {
       "ConfidentialContainersOverview": "./components/ConfidentialContainersOverview",
       "CocoSetup": "./components/CocoSetup",
@@ -83,15 +83,7 @@
       "TeeNodesList": "./components/TeeNodesList",
       "RuntimeClassesList": "./components/RuntimeClassesList",
       "InitdataBuilder": "./components/InitdataBuilder",
-      "VerifyAttestation": "./components/VerifyAttestation",
-      "TrusteeOverview": "./components/TrusteeOverview",
-      "DeployTrusteeWizard": "./components/DeployTrusteeWizard",
-      "CreateConfidentialWorkload": "./components/CreateConfidentialWorkload",
-      "TrusteePoliciesTab": "./components/tabs/TrusteePoliciesTab",
-      "TrusteeReferenceValuesTab": "./components/tabs/TrusteeReferenceValuesTab",
-      "TrusteeSecretsTab": "./components/tabs/TrusteeSecretsTab",
-      "TrusteeGpuTab": "./components/tabs/TrusteeGpuTab",
-      "ccActions": "./actions/ccActions"
+      "CreateConfidentialWorkload": "./components/CreateConfidentialWorkload"
     },
     "dependencies": {
       "@console/pluginAPI": "^4.21.0"

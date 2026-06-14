@@ -82,24 +82,6 @@ export const MachineConfigModel: K8sModel = {
   crd: true,
 };
 
-// ---------------------------------------------------------------------------
-// Trustee / attestation (trusted cluster, or co-located — separation is a best
-// practice, not enforced). TrusteeConfig is the productized high-level CR; the
-// operator generates a KbsConfig plus ConfigMaps/Secrets from it.
-// ---------------------------------------------------------------------------
-export const TrusteeConfigGVK: K8sGroupVersionKind = {
-  group: 'trustee.confidentialcontainers.org',
-  version: 'v1',
-  kind: 'TrusteeConfig',
-};
-
-/** Lower-level resource the operator generates from a TrusteeConfig. Advanced use. */
-export const KbsConfigGVK: K8sGroupVersionKind = {
-  group: 'trustee.confidentialcontainers.org',
-  version: 'v1alpha1',
-  kind: 'KbsConfig',
-};
-
 // ---- Core ----
 export const PodGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Pod' };
 export const DeploymentGVK: K8sGroupVersionKind = {
@@ -150,18 +132,6 @@ export const ConfigMapModel: K8sModel = {
   labelPlural: 'ConfigMaps',
 };
 
-export const TrusteeConfigModel: K8sModel = {
-  apiGroup: 'trustee.confidentialcontainers.org',
-  apiVersion: 'v1',
-  kind: 'TrusteeConfig',
-  plural: 'trusteeconfigs',
-  namespaced: true,
-  abbr: 'TC',
-  label: 'TrusteeConfig',
-  labelPlural: 'TrusteeConfigs',
-  crd: true,
-};
-
 // ---- Well-known names / locations ----
 /** Where the OpenShift sandboxed containers operator and its config live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
@@ -172,14 +142,9 @@ export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
  * not "feature gates" — confidential containers is a supported (GA) option.
  */
 export const OSC_FEATURE_GATES_CM = 'osc-feature-gates';
-/** Default namespace for the Red Hat build of Trustee operator. */
-export const TRUSTEE_NAMESPACE = 'trustee-operator-system';
 export const KATACONFIG_NAME = 'example-kataconfig';
 /** Pod annotation carrying the gzip+base64 initdata for a confidential pod. */
 export const CC_INIT_DATA_ANNOTATION = 'io.katacontainers.config.hypervisor.cc_init_data';
-/** Label the Trustee operator puts on the KBS workload pods. */
-export const KBS_POD_SELECTOR = 'app=kbs';
 
-// `kind~group~version` reference strings for tab/action/flag extensions.
-export const TrusteeConfigModelRef = 'trustee.confidentialcontainers.org~v1~TrusteeConfig';
+// `kind~group~version` reference string for action/flag extensions.
 export const KataConfigModelRef = 'kataconfiguration.openshift.io~v1~KataConfig';

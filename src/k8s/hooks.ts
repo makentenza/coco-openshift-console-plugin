@@ -5,13 +5,11 @@ import {
   ConfigMapGVK,
   DeploymentGVK,
   KataConfigGVK,
-  KbsConfigGVK,
   NodeGVK,
   OSC_FEATURE_GATES_CM,
   OSC_NAMESPACE,
   PodGVK,
   RuntimeClassGVK,
-  TrusteeConfigGVK,
 } from './resources';
 import type {
   CcClass,
@@ -19,12 +17,10 @@ import type {
   ConfigMapKind,
   DeploymentKind,
   KataConfigKind,
-  KbsConfigKind,
   NodeKind,
   PodKind,
   RuntimeClassKind,
   TeeNode,
-  TrusteeConfigKind,
 } from './types';
 import { classForRuntimeClass, isConfidentialClass } from '../utils/runtime';
 import { teeNode } from '../utils/tee';
@@ -157,18 +153,3 @@ export const useConfidentialWorkloads = (): { workloads: CcWorkload[]; loaded: b
   return { workloads, loaded: rcLoaded && podsLoaded && depLoaded };
 };
 
-export const useTrusteeConfigs = (): [TrusteeConfigKind[], boolean] => {
-  const [data, loaded] = useK8sWatchResource<TrusteeConfigKind[]>({
-    groupVersionKind: TrusteeConfigGVK,
-    isList: true,
-  });
-  return [data ?? [], loaded];
-};
-
-export const useKbsConfigs = (): [KbsConfigKind[], boolean] => {
-  const [data, loaded] = useK8sWatchResource<KbsConfigKind[]>({
-    groupVersionKind: KbsConfigGVK,
-    isList: true,
-  });
-  return [data ?? [], loaded];
-};

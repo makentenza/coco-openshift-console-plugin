@@ -26,7 +26,6 @@ import {
   useKataConfig,
   useRuntimeClasses,
   useTeeNodes,
-  useTrusteeConfigs,
 } from '../k8s/hooks';
 import { KataConfigGVK } from '../k8s/resources';
 import { isConfidentialRuntimeClass } from '../utils/runtime';
@@ -69,7 +68,6 @@ const CocoSetup: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [kataConfig] = useKataConfig();
   const [ccEnabled] = useConfidentialEnabled();
-  const [trusteeConfigs] = useTrusteeConfigs();
   const { teeNodes } = useTeeNodes();
   const [runtimeClasses] = useRuntimeClasses();
 
@@ -79,7 +77,6 @@ const CocoSetup: FC = () => {
     [runtimeClasses],
   );
   const ccRuntimeReady = confidentialRCs.length > 0;
-  const trusteeReady = trusteeConfigs.length > 0;
 
   const steps: Step[] = [
     {
@@ -147,19 +144,6 @@ const CocoSetup: FC = () => {
           'Create a KataConfig with confidential containers enabled to install the kata-cc runtime on your TEE nodes. This reboots the selected nodes.',
         )
       ),
-    },
-    {
-      title: t('Attestation (Trustee)'),
-      status: trusteeReady ? 'done' : 'info',
-      detail: trusteeReady
-        ? t('Trustee is deployed on this cluster and ready to verify TEE evidence.')
-        : t(
-            'Deploy the Red Hat build of Trustee to verify TEE evidence and release sealed secrets. It can also run on a separate trusted cluster (hub-and-spoke).',
-          ),
-      action: {
-        label: trusteeReady ? t('View Trustee') : t('Deploy Trustee'),
-        href: trusteeReady ? '/trustee' : '/trustee/deploy',
-      },
     },
     {
       title: t('Build initdata'),

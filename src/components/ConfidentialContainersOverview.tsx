@@ -15,14 +15,12 @@ import {
   Label,
   PageSection,
   Skeleton,
-  Title,
 } from '@patternfly/react-core';
 import {
   ArrowRightIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
-  LockIcon,
 } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useMemo } from 'react';
@@ -34,7 +32,6 @@ import {
   useKataConfig,
   useRuntimeClasses,
   useTeeNodes,
-  useTrusteeConfigs,
 } from '../k8s/hooks';
 import { NodeGVK, RuntimeClassGVK } from '../k8s/resources';
 import { ccClassLabel, classForRuntimeClass, isConfidentialRuntimeClass } from '../utils/runtime';
@@ -143,7 +140,6 @@ const ConfidentialContainersOverview: FC = () => {
   const { workloads, loaded } = useConfidentialWorkloads();
   const [ccEnabled, ccEnabledLoaded] = useConfidentialEnabled();
   const { teeNodes } = useTeeNodes();
-  const [trusteeConfigs] = useTrusteeConfigs();
 
   const kata = kataInstallSummary(kataConfig);
   const confidentialRCs = useMemo(
@@ -189,13 +185,6 @@ const ConfidentialContainersOverview: FC = () => {
           <GridItem span={2}>
             <StatTile value={kata.ready} label={t('Kata nodes ready')} loading={!kcLoaded} />
           </GridItem>
-          <GridItem span={2}>
-            <StatTile
-              value={trusteeConfigs.length > 0 ? trusteeConfigs.length : t('External')}
-              label={t('Attestation (Trustee)')}
-            />
-          </GridItem>
-
           <GridItem span={6}>
             <Card>
               <CardTitle>{t('Confidential computing status')}</CardTitle>
@@ -360,33 +349,6 @@ const ConfidentialContainersOverview: FC = () => {
             </Card>
           </GridItem>
 
-          <GridItem span={6}>
-            <Card>
-              <CardTitle>{t('Attestation')}</CardTitle>
-              <CardBody>
-                {trusteeConfigs.length > 0 ? (
-                  <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }}>
-                    <FlexItem>
-                      <Label color="green" icon={<LockIcon />}>
-                        {t('Trustee detected on this cluster')}
-                      </Label>
-                    </FlexItem>
-                    <FlexItem>
-                      <Title headingLevel="h4" size="md">
-                        <Link to="/trustee">{t('Go to Trustee (Attestation)')}</Link>
-                      </Title>
-                    </FlexItem>
-                  </Flex>
-                ) : (
-                  <span className="coco-openshift-console-plugin__muted">
-                    {t(
-                      'Attestation is provided by the Red Hat build of Trustee, which verifies TEE evidence and releases sealed secrets. It commonly runs on a separate trusted cluster (hub-and-spoke), so it may not appear here.',
-                    )}
-                  </span>
-                )}
-              </CardBody>
-            </Card>
-          </GridItem>
         </Grid>
       </PageSection>
     </>

@@ -108,31 +108,6 @@ export type DaemonSetKind = K8sResourceCommon & {
   };
 };
 
-/** trustee.confidentialcontainers.org/v1 TrusteeConfig — the high-level attestation CR. */
-export type TrusteeConfigKind = K8sResourceCommon & {
-  spec?: {
-    profileType?: 'Permissive' | 'Restricted';
-    kbsServiceType?: string;
-    httpsSpec?: { tlsSecretName?: string };
-    attestationTokenVerificationSpec?: { tlsSecretName?: string };
-  };
-  status?: {
-    isReady?: boolean;
-    conditions?: { type: string; status: string; reason?: string; message?: string }[];
-  };
-};
-
-/** trustee.confidentialcontainers.org/v1alpha1 KbsConfig — generated from TrusteeConfig (advanced). */
-export type KbsConfigKind = K8sResourceCommon & {
-  spec?: {
-    kbsServiceType?: string;
-    kbsSecretResources?: string[];
-  };
-  status?: {
-    isReady?: boolean;
-  };
-};
-
 /** Confidential classification derived from a RuntimeClass (name + handler). */
 export type CcClass = 'confidential' | 'confidential-gpu' | 'peerpod' | 'sandbox' | 'unknown';
 

@@ -13,6 +13,7 @@ import {
   CardBody,
   CardTitle,
   Checkbox,
+  ClipboardCopy,
   CodeBlock,
   CodeBlockCode,
   Form,
@@ -36,7 +37,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC, Ref } from 'react';
 import { useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom-v5-compat';
+import { Link, useLocation, useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import {
   CC_INIT_DATA_ANNOTATION,
@@ -61,6 +62,13 @@ const LUKS_HELPER_PLACEHOLDER = '<luks-helper-image>';
 const CreateConfidentialWorkload: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const navigate = useNavigate();
+  const location = useLocation();
+  // Optional state handed over from the Initdata builder's "Create workload with this initdata".
+  const fromBuilder = (location.state ?? null) as {
+    initdata?: string;
+    pcr8?: string;
+    trusteeUrl?: string;
+  } | null;
 
   const [kind, setKind] = useState<Kind>('Pod');
   const [name, setName] = useState('coco-workload');
@@ -69,7 +77,7 @@ const CreateConfidentialWorkload: FC = () => {
   const [runtimeClass, setRuntimeClass] = useState<RuntimeClass>('kata-cc');
   const [replicas, setReplicas] = useState('1');
   const [command, setCommand] = useState('sleep infinity');
-  const [initdata, setInitdata] = useState('');
+  const [initdata, setInitdata] = useState(fromBuilder?.initdata ?? '');
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
@@ -275,6 +283,38 @@ const CreateConfidentialWorkload: FC = () => {
       <DocumentTitle>{t('Create confidential workload')}</DocumentTitle>
       <ListPageHeader title={t('Create confidential workload')} />
       <PageSection>
+        {fromBuilder?.initdata && (
+          <Alert
+            variant="info"
+            isInline
+            title={t('Initdata applied from the builder')}
+            className="coco-openshift-console-plugin__mb"
+          >
+            <p className="coco-openshift-console-plugin__mb">
+              {t(
+                'This workload will be created with the cc_init_data annotation you generated. It stays editable below.',
+              )}
+            </p>
+            {fromBuilder.pcr8 && (
+              <>
+                <p className="coco-openshift-console-plugin__mb">
+                  {t(
+                    'Before it can attest, register this PCR8 reference value in Trustee:',
+                  )}
+                </p>
+                <ClipboardCopy
+                  isReadOnly
+                  hoverTip={t('Copy')}
+                  clickTip={t('Copied')}
+                  className="coco-openshift-console-plugin__mb"
+                >
+                  {fromBuilder.pcr8}
+                </ClipboardCopy>
+              </>
+            )}
+            <Link to="/trustee">{t('Open Confidential Attestation')}</Link>
+          </Alert>
+        )}
         <Grid hasGutter>
           <GridItem md={6}>
             <Card>

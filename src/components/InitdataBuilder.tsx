@@ -25,7 +25,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom-v5-compat';
+import { Link, useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { CC_INIT_DATA_ANNOTATION } from '../k8s/resources';
 import {
@@ -140,6 +140,7 @@ const HowItWorks: FC = () => {
 
 const InitdataBuilder: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const navigate = useNavigate();
   const [trusteeUrl, setTrusteeUrl] = useState('https://kbs-service.trustee-operator-system:8080');
   const [algorithm, setAlgorithm] = useState<HashAlgo>('sha256');
   const [kbsCert, setKbsCert] = useState('');
@@ -395,16 +396,24 @@ const InitdataBuilder: FC = () => {
                       <Button
                         variant="primary"
                         className="coco-openshift-console-plugin__mb"
-                        component={(props) => <Link {...props} to={TRUSTEE_OVERVIEW} />}
+                        onClick={() => {
+                          navigate(CREATE_WORKLOAD, {
+                            state: {
+                              initdata: result.annotation,
+                              pcr8: result.pcr8,
+                              trusteeUrl: trusteeUrl.trim(),
+                            },
+                          });
+                        }}
                       >
-                        {t('Register reference value in Confidential Attestation')}
+                        {t('Create workload with this initdata')}
                       </Button>{' '}
                       <Button
                         variant="secondary"
                         className="coco-openshift-console-plugin__mb"
-                        component={(props) => <Link {...props} to={CREATE_WORKLOAD} />}
+                        component={(props) => <Link {...props} to={TRUSTEE_OVERVIEW} />}
                       >
-                        {t('Create confidential workload')}
+                        {t('Register reference value in Confidential Attestation')}
                       </Button>
                     </div>
                   </>

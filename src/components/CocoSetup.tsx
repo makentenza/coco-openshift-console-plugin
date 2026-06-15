@@ -148,14 +148,6 @@ const CocoSetup: FC = () => {
       node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
     },
     {
-      title: t('Get your initdata from Trustee'),
-      status: 'info',
-      detail: t(
-        'Initdata pins the attestation policy and KBS endpoint into your pods so the guest can attest on boot. Your Trustee admin generates and shares it from Confidential Attestation.',
-      ),
-      action: { label: t('Open Confidential Attestation'), href: '/trustee' },
-    },
-    {
       title: t('Run a confidential workload'),
       status: ccRuntimeReady ? 'info' : 'todo',
       detail: ccRuntimeReady

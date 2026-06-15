@@ -632,7 +632,7 @@ const CreateConfidentialWorkload: FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           {t(
-                            'Paste the initdata your Trustee admin shared (Confidential Attestation → your TrusteeConfig → Initdata). Without it the workload cannot attest.',
+                            'Paste the initdata your Trustee admin shared with you — the cc_init_data value they generated on the Trustee, whether it runs in this cluster or a remote one. Without it the workload cannot attest.',
                           )}
                         </HelperTextItem>
                       </HelperText>
@@ -794,7 +794,7 @@ const CreateConfidentialWorkload: FC = () => {
                         </p>
                         <p>
                           {t(
-                            'The Confidential Attestation → Attestation status view shows that record. The sidecar must be present at pod creation; it cannot be added to a running pod.',
+                            'The sidecar publishes that record as a ConfigMap the Trustee plugin reads in its Attestation status view. It must be present at pod creation; it cannot be added to a running pod.',
                           )}
                         </p>
                       </Alert>

@@ -135,7 +135,7 @@
   "kata-cc runtime": "kata-cc runtime",
   "kata-cc runtime installed": "kata-cc runtime installed",
   "KataConfig": "KataConfig",
-  "KBS certificate (PEM body, optional)": "KBS certificate (PEM body, optional)",
+  "KBS certificate (PEM, optional)": "KBS certificate (PEM, optional)",
   "Kernel arguments": "Kernel arguments",
   "Kind": "Kind",
   "Loading nodes…": "Loading nodes…",

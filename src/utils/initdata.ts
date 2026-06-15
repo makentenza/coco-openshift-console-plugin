@@ -84,8 +84,14 @@ const policyRego = (overrides: InitdataInput['policyOverrides']): string => {
 /** Render a complete initdata.toml from the builder inputs. */
 export const buildInitdataToml = (input: InitdataInput): string => {
   const { trusteeUrl, algorithm, kbsCert, imageSecurityPolicyUri } = input;
-  const certBlock = kbsCert
-    ? `kbs_cert = """\n-----BEGIN CERTIFICATE-----\n${kbsCert.trim()}\n-----END CERTIFICATE-----\n"""\n`
+  // Accept either a full PEM (with BEGIN/END lines) or just the base64 body —
+  // strip any markers the user pasted, then re-wrap exactly once.
+  const certBody = kbsCert
+    ?.replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .trim();
+  const certBlock = certBody
+    ? `kbs_cert = """\n-----BEGIN CERTIFICATE-----\n${certBody}\n-----END CERTIFICATE-----\n"""\n`
     : '';
   // NB: the [image] table must live INSIDE the cdh.toml heredoc (CDH reads
   // image_security_policy_uri from cdh.toml). It is appended before the closing

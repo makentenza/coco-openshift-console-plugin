@@ -263,7 +263,7 @@ const InitdataBuilder: FC = () => {
                       <FormSelectOption value="sha512" label="sha512" />
                     </FormSelect>
                   </FormGroup>
-                  <FormGroup label={t('KBS certificate (PEM body, optional)')} fieldId="kbs-cert">
+                  <FormGroup label={t('KBS certificate (PEM, optional)')} fieldId="kbs-cert">
                     <TextArea
                       id="kbs-cert"
                       value={kbsCert}

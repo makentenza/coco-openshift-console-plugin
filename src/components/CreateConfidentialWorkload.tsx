@@ -13,11 +13,11 @@ import {
   CardBody,
   CardTitle,
   Checkbox,
-  ClipboardCopy,
   CodeBlock,
   CodeBlockCode,
   Form,
   FormGroup,
+  FormHelperText,
   FormSelect,
   FormSelectOption,
   Grid,
@@ -37,7 +37,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC, Ref } from 'react';
 import { useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom-v5-compat';
+import { useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import {
   CC_INIT_DATA_ANNOTATION,
@@ -118,13 +118,6 @@ const SIDECAR_SCRIPT = [
 const CreateConfidentialWorkload: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const navigate = useNavigate();
-  const location = useLocation();
-  // Optional state handed over from the Initdata builder's "Create workload with this initdata".
-  const fromBuilder = (location.state ?? null) as {
-    initdata?: string;
-    pcr8?: string;
-    trusteeUrl?: string;
-  } | null;
 
   const [kind, setKind] = useState<Kind>('Pod');
   const [name, setName] = useState('coco-workload');
@@ -133,7 +126,7 @@ const CreateConfidentialWorkload: FC = () => {
   const [runtimeClass, setRuntimeClass] = useState<RuntimeClass>('kata-cc');
   const [replicas, setReplicas] = useState('1');
   const [command, setCommand] = useState('sleep infinity');
-  const [initdata, setInitdata] = useState(fromBuilder?.initdata ?? '');
+  const [initdata, setInitdata] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
@@ -209,15 +202,16 @@ const CreateConfidentialWorkload: FC = () => {
   // Default the PVC name from the workload name until the user overrides it.
   const effectivePvcName = pvcNameTouched.current ? pvcName : pvcName || `${name.trim()}-enc`;
 
-  // The sidecar records which KBS it attested against. When this page was opened
-  // from the initdata builder, reuse the Trustee (KBS) URL baked into that
-  // initdata; otherwise leave it empty (the probe still works via the CDH).
-  const kbsEndpoint = fromBuilder?.trusteeUrl?.trim() ?? '';
+  // The sidecar records which KBS it attested against. The KBS endpoint is baked
+  // into the initdata (which the user pastes below), so it is left empty here —
+  // the probe still works via the CDH.
+  const kbsEndpoint = '';
 
   const valid =
     name.trim() !== '' &&
     nsTrimmed !== '' &&
     image.trim() !== '' &&
+    initdata.trim() !== '' &&
     (!enc || (effectivePvcName.trim() !== '' && pvcSize.trim() !== ''));
 
   const buildPvc = (): K8sResourceCommon =>
@@ -438,36 +432,6 @@ const CreateConfidentialWorkload: FC = () => {
       <DocumentTitle>{t('Create confidential workload')}</DocumentTitle>
       <ListPageHeader title={t('Create confidential workload')} />
       <PageSection>
-        {fromBuilder?.initdata && (
-          <Alert
-            variant="info"
-            isInline
-            title={t('Initdata applied from the builder')}
-            className="coco-openshift-console-plugin__mb"
-          >
-            <p className="coco-openshift-console-plugin__mb">
-              {t(
-                'This workload will be created with the cc_init_data annotation you generated. It stays editable below.',
-              )}
-            </p>
-            {fromBuilder.pcr8 && (
-              <>
-                <p className="coco-openshift-console-plugin__mb">
-                  {t('Before it can attest, register this PCR8 reference value in Trustee:')}
-                </p>
-                <ClipboardCopy
-                  isReadOnly
-                  hoverTip={t('Copy')}
-                  clickTip={t('Copied')}
-                  className="coco-openshift-console-plugin__mb"
-                >
-                  {fromBuilder.pcr8}
-                </ClipboardCopy>
-              </>
-            )}
-            <Link to="/trustee">{t('Open Confidential Attestation')}</Link>
-          </Alert>
-        )}
         <Grid hasGutter>
           <GridItem md={6}>
             <Card>
@@ -651,7 +615,8 @@ const CreateConfidentialWorkload: FC = () => {
                     />
                   </FormGroup>
                   <FormGroup
-                    label={t('Initdata annotation value (optional)')}
+                    label={t('Initdata (cc_init_data annotation)')}
+                    isRequired
                     fieldId="cw-initdata"
                   >
                     <TextArea
@@ -661,13 +626,17 @@ const CreateConfidentialWorkload: FC = () => {
                         setInitdata(v);
                       }}
                       rows={4}
-                      placeholder={t('Paste the gzip+base64 value, or generate it first.')}
+                      placeholder={t('Paste the gzip+base64 value.')}
                     />
-                    <p className="coco-openshift-console-plugin__mt">
-                      <Link to="/confidential-containers/initdata">
-                        {t('Open the initdata builder')}
-                      </Link>
-                    </p>
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem>
+                          {t(
+                            'Paste the initdata your Trustee admin shared (Confidential Attestation → your TrusteeConfig → Initdata). Without it the workload cannot attest.',
+                          )}
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
                   </FormGroup>
 
                   <FormGroup fieldId="cw-enc">

@@ -82,7 +82,6 @@
       "ConfidentialWorkloadsList": "./components/ConfidentialWorkloadsList",
       "TeeNodesList": "./components/TeeNodesList",
       "RuntimeClassesList": "./components/RuntimeClassesList",
-      "InitdataBuilder": "./components/InitdataBuilder",
       "CreateConfidentialWorkload": "./components/CreateConfidentialWorkload"
     },
     "dependencies": {

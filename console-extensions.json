@@ -93,17 +93,6 @@
   {
     "type": "console.navigation/href",
     "properties": {
-      "id": "cc-initdata",
-      "perspective": "admin",
-      "section": "confidential-containers",
-      "name": "%plugin__coco-openshift-console-plugin~Initdata builder%",
-      "href": "/confidential-containers/initdata"
-    },
-    "flags": { "required": ["COCO_KATACONFIG"] }
-  },
-  {
-    "type": "console.navigation/href",
-    "properties": {
       "id": "cc-create",
       "perspective": "admin",
       "section": "confidential-containers",
@@ -154,15 +143,6 @@
       "exact": true,
       "path": "/confidential-containers/runtime-classes",
       "component": { "$codeRef": "RuntimeClassesList" }
-    },
-    "flags": { "required": ["COCO_KATACONFIG"] }
-  },
-  {
-    "type": "console.page/route",
-    "properties": {
-      "exact": true,
-      "path": "/confidential-containers/initdata",
-      "component": { "$codeRef": "InitdataBuilder" }
     },
     "flags": { "required": ["COCO_KATACONFIG"] }
   },

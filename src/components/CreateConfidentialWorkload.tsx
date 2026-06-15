@@ -43,10 +43,10 @@ import {
   CC_INIT_DATA_ANNOTATION,
   DeploymentModel,
   EVIDENCE_SIDECAR_IMAGE,
-  NamespaceGVK,
   NamespaceModel,
   PersistentVolumeClaimModel,
   PodModel,
+  ProjectGVK,
   RoleBindingModel,
   RoleModel,
   ServiceAccountModel,
@@ -131,16 +131,19 @@ const CreateConfidentialWorkload: FC = () => {
   const [busy, setBusy] = useState(false);
 
   // --- Namespace typeahead (pick existing or type a brand-new name) ---
-  const [namespaces] = useK8sWatchResource<NamespaceKind[]>({
-    groupVersionKind: NamespaceGVK,
+  // Project (project.openshift.io) is the RBAC-aware list of namespaces the user
+  // can see: a non-admin can't list cluster-scoped Namespaces but can list their
+  // Projects; for an admin it's every namespace.
+  const [projects] = useK8sWatchResource<NamespaceKind[]>({
+    groupVersionKind: ProjectGVK,
     isList: true,
   });
   const nsNames = useMemo(
     () =>
       [
-        ...new Set((namespaces ?? []).map((n) => n.metadata?.name).filter(Boolean) as string[]),
+        ...new Set((projects ?? []).map((n) => n.metadata?.name).filter(Boolean) as string[]),
       ].sort((a, b) => a.localeCompare(b)),
-    [namespaces],
+    [projects],
   );
   const [nsOpen, setNsOpen] = useState(false);
   // What the user has typed into the combobox input (drives filtering + creatable option).
@@ -149,7 +152,12 @@ const CreateConfidentialWorkload: FC = () => {
   const nsTrimmed = namespace.trim();
   const namespaceExists = nsNames.includes(nsTrimmed);
   const nsFilter = nsInput.trim().toLowerCase();
-  const filteredNs = nsFilter ? nsNames.filter((n) => n.toLowerCase().includes(nsFilter)) : nsNames;
+  // Don't filter while the input still shows the current selection, so opening the
+  // menu lists every namespace; only narrow once the user types something new.
+  const filterActive = nsFilter !== '' && nsFilter !== nsTrimmed.toLowerCase();
+  const filteredNs = filterActive
+    ? nsNames.filter((n) => n.toLowerCase().includes(nsFilter))
+    : nsNames;
   // Offer a creatable option when the typed text doesn't exactly match an existing namespace.
   const nsTypedValue = nsInput.trim();
   const showCreateNsOption = nsTypedValue !== '' && !nsNames.includes(nsTypedValue);

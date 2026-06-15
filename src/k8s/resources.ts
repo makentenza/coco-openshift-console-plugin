@@ -112,6 +112,12 @@ export const SecretGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Secret' };
 export const EventGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Event' };
 export const NodeGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Node' };
 export const NamespaceGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Namespace' };
+/** project.openshift.io/v1 Project — the RBAC-aware list of namespaces a user can see. */
+export const ProjectGVK: K8sGroupVersionKind = {
+  group: 'project.openshift.io',
+  version: 'v1',
+  kind: 'Project',
+};
 export const PersistentVolumeClaimGVK: K8sGroupVersionKind = {
   version: 'v1',
   kind: 'PersistentVolumeClaim',

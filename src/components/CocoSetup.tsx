@@ -31,6 +31,7 @@ import { KataConfigGVK } from '../k8s/resources';
 import { isConfidentialRuntimeClass } from '../utils/runtime';
 import { kataInstallSummary } from '../utils/status';
 import { EnableConfidentialContainers } from './EnableConfidentialContainers';
+import { EnableKataConfig } from './EnableKataConfig';
 import './coco.css';
 
 type Status = 'done' | 'todo' | 'warn' | 'info';
@@ -144,6 +145,7 @@ const CocoSetup: FC = () => {
           'Create a KataConfig with confidential containers enabled to install the kata-cc runtime on your TEE nodes. This reboots the selected nodes.',
         )
       ),
+      node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
     },
     {
       title: t('Build initdata'),
@@ -158,7 +160,7 @@ const CocoSetup: FC = () => {
       status: ccRuntimeReady ? 'info' : 'todo',
       detail: ccRuntimeReady
         ? t(
-            'Deploy a workload with runtimeClassName: kata-cc, then verify its attestation from the workload page.',
+            'Deploy a workload with runtimeClassName: kata-cc, then use the Verify attestation action on the Workloads list to check it.',
           )
         : t('Available once the kata-cc runtime is installed on your TEE nodes.'),
       action: ccRuntimeReady

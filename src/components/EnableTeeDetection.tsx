@@ -123,7 +123,12 @@ export const EnableTeeDetection: FC = () => {
                 title={t('No NodeFeatureDiscovery instance found')}
                 className="coco-openshift-console-plugin__mb"
               >
-                {t('One will be created so NFD actually scans your nodes.')}
+                {t(
+                  'One will be created so NFD actually scans your nodes. This needs the Node Feature Discovery operator — if creating fails, install it from OperatorHub first.',
+                )}{' '}
+                <a href="/operatorhub/all-namespaces?keyword=Node+Feature+Discovery">
+                  {t('Install the NFD operator')}
+                </a>
               </Alert>
             )}
             <Form>
@@ -163,7 +168,15 @@ export const EnableTeeDetection: FC = () => {
                 title={t('Could not enable TEE detection')}
                 className="coco-openshift-console-plugin__mt"
               >
-                {error}
+                <p>{error}</p>
+                <p className="coco-openshift-console-plugin__mt">
+                  {t(
+                    'If the error mentions a missing resource, the Node Feature Discovery operator is probably not installed.',
+                  )}{' '}
+                  <a href="/operatorhub/all-namespaces?keyword=Node+Feature+Discovery">
+                    {t('Install the NFD operator')}
+                  </a>
+                </p>
               </Alert>
             )}
           </ModalBody>

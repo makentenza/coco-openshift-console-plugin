@@ -119,7 +119,7 @@ const GettingStarted: FC = () => {
       </FlexItem>
       <FlexItem className="coco-openshift-console-plugin__muted">
         {t(
-          '3. Build initdata and deploy a pod with runtimeClassName: kata-cc, then verify attestation.',
+          '3. Build initdata and deploy a pod with runtimeClassName: kata-cc, then verify its attestation from the Workloads list.',
         )}
       </FlexItem>
       <FlexItem className="coco-openshift-console-plugin__mt">

@@ -18,6 +18,19 @@ export const KataConfigGVK: K8sGroupVersionKind = {
   kind: 'KataConfig',
 };
 
+/** Create-capable model for the cluster-scoped KataConfig singleton. */
+export const KataConfigModel: K8sModel = {
+  apiGroup: 'kataconfiguration.openshift.io',
+  apiVersion: 'v1',
+  kind: 'KataConfig',
+  plural: 'kataconfigs',
+  namespaced: false,
+  abbr: 'KC',
+  label: 'KataConfig',
+  labelPlural: 'KataConfigs',
+  crd: true,
+};
+
 /** nfd.openshift.io/v1alpha1 NodeFeatureRule — labels nodes with detected TEEs. */
 export const NodeFeatureRuleGVK: K8sGroupVersionKind = {
   group: 'nfd.openshift.io',

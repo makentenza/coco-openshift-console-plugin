@@ -13,6 +13,7 @@ import {
   CardTitle,
   CodeBlock,
   CodeBlockCode,
+  ExpandableSection,
   Form,
   FormGroup,
   FormSelect,
@@ -32,6 +33,34 @@ import './coco.css';
 
 type Kind = 'Pod' | 'Deployment';
 type RuntimeClass = 'kata-cc' | 'kata-cc-nvidia-gpu';
+
+// Documented LUKS-in-TEE pattern: a raw-block PVC opened by an init container
+// with a Trustee-delivered passphrase. Shown as guidance — advanced/optional.
+const LUKS_EXAMPLE = `# 1) Raw-block PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: enc-data }
+spec:
+  accessModes: [ReadWriteOnce]
+  volumeMode: Block
+  resources: { requests: { storage: 1Gi } }
+---
+# 2) In the kata-cc pod/template spec:
+spec:
+  runtimeClassName: kata-cc
+  volumes:
+    - name: enc
+      persistentVolumeClaim: { claimName: enc-data }
+  initContainers:
+    - name: luks-open          # formats/opens the LUKS volume using a
+      image: <osc-storage-helper>   # passphrase sealed by Trustee (kbs:///...)
+      volumeDevices:
+        - { name: enc, devicePath: /dev/encblock }
+  containers:
+    - name: app
+      image: <your-image>
+      volumeDevices:
+        - { name: enc, devicePath: /dev/encblock }`;
 
 const CreateConfidentialWorkload: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
@@ -168,6 +197,42 @@ const CreateConfidentialWorkload: FC = () => {
                       <FormSelectOption value="kata-cc-nvidia-gpu" label="kata-cc-nvidia-gpu" />
                     </FormSelect>
                   </FormGroup>
+                  {runtimeClass === 'kata-cc-nvidia-gpu' && (
+                    <Alert
+                      variant="info"
+                      isInline
+                      title={t('Confidential GPU prerequisites (Tech Preview)')}
+                      className="coco-openshift-console-plugin__mb"
+                    >
+                      <p className="coco-openshift-console-plugin__mb">
+                        {t(
+                          'The kata-cc-nvidia-gpu runtime needs the GPU stack enabled on your TEE nodes first (NVIDIA H100, bare metal only):',
+                        )}
+                      </p>
+                      <ul className="coco-openshift-console-plugin__mb">
+                        <li>
+                          {t('An IOMMU MachineConfig (intel_iommu=on / amd_iommu=on) — reboots nodes.')}
+                        </li>
+                        <li>
+                          {t(
+                            'The NVIDIA GPU Operator with a ClusterPolicy enabling ccManager (CC mode on), the kata sandbox device plugin, and vfio-manager.',
+                          )}
+                        </li>
+                        <li>
+                          {t(
+                            'Nodes labeled nvidia.com/cc.mode.state=on, nvidia.com/cc.ready.state=true, and a TEE label.',
+                          )}
+                        </li>
+                      </ul>
+                      <a
+                        href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t('NVIDIA GPU Operator documentation')}
+                      </a>
+                    </Alert>
+                  )}
                   {kind === 'Deployment' && (
                     <FormGroup label={t('Replicas')} fieldId="cw-replicas">
                       <TextInput
@@ -208,6 +273,19 @@ const CreateConfidentialWorkload: FC = () => {
                       </Link>
                     </p>
                   </FormGroup>
+
+                  <ExpandableSection
+                    toggleText={t('Encrypted block volume (LUKS) — advanced')}
+                  >
+                    <p className="coco-openshift-console-plugin__muted coco-openshift-console-plugin__mb">
+                      {t(
+                        'For data-at-use encryption inside the TEE, attach a raw-block volume and open it with LUKS from an init container, using a passphrase that Trustee delivers only after attestation. Add to the pod spec:',
+                      )}
+                    </p>
+                    <CodeBlock>
+                      <CodeBlockCode>{LUKS_EXAMPLE}</CodeBlockCode>
+                    </CodeBlock>
+                  </ExpandableSection>
 
                   {error && (
                     <Alert variant="danger" isInline title={t('Could not create workload')}>

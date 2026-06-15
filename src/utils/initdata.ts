@@ -87,8 +87,12 @@ export const buildInitdataToml = (input: InitdataInput): string => {
   const certBlock = kbsCert
     ? `kbs_cert = """\n-----BEGIN CERTIFICATE-----\n${kbsCert.trim()}\n-----END CERTIFICATE-----\n"""\n`
     : '';
+  // NB: the [image] table must live INSIDE the cdh.toml heredoc (CDH reads
+  // image_security_policy_uri from cdh.toml). It is appended before the closing
+  // ''' below — not after, or it would land at the document's top level and the
+  // policy would be silently dropped (and the TOML — and PCR8 over it — malformed).
   const imageBlock = imageSecurityPolicyUri
-    ? `\n[image]\nimage_security_policy_uri = '${imageSecurityPolicyUri}'\n`
+    ? `[image]\nimage_security_policy_uri = '${imageSecurityPolicyUri}'\n`
     : '';
 
   return `algorithm = "${algorithm}"
@@ -109,7 +113,7 @@ credentials = []
 [kbc]
 name = 'cc_kbc'
 url = '${trusteeUrl}'
-${certBlock}'''${imageBlock ? `\n${imageBlock.trim()}\n` : ''}
+${certBlock}${imageBlock}'''
 "policy.rego" = '''
 ${policyRego(input.policyOverrides)}'''
 `;

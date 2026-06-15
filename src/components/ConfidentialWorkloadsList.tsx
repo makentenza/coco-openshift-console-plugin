@@ -7,6 +7,7 @@ import {
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
   Button,
+  ClipboardCopy,
   Dropdown,
   DropdownItem,
   DropdownList,
@@ -55,7 +56,11 @@ const SORTABLE_FIELDS: (keyof CcWorkload | null)[] = [
   'creationTimestamp',
 ];
 
-const RowActions: FC<{ w: CcWorkload; onDelete: (w: CcWorkload) => void }> = ({ w, onDelete }) => {
+const RowActions: FC<{
+  w: CcWorkload;
+  onDelete: (w: CcWorkload) => void;
+  onVerify: (w: CcWorkload) => void;
+}> = ({ w, onDelete, onVerify }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [open, setOpen] = useState(false);
   return (
@@ -77,6 +82,15 @@ const RowActions: FC<{ w: CcWorkload; onDelete: (w: CcWorkload) => void }> = ({ 
       )}
     >
       <DropdownList>
+        {w.kind === 'Pod' && (
+          <DropdownItem
+            onClick={() => {
+              onVerify(w);
+            }}
+          >
+            {t('Verify attestation')}
+          </DropdownItem>
+        )}
         <DropdownItem
           onClick={() => {
             onDelete(w);
@@ -152,6 +166,7 @@ const ConfidentialWorkloadsList: FC = () => {
   const [statusOpen, setStatusOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ISortBy>({});
   const [toDelete, setToDelete] = useState<CcWorkload | undefined>();
+  const [toVerify, setToVerify] = useState<CcWorkload | undefined>();
   const [deleting, setDeleting] = useState(false);
 
   const namespaces = useMemo(
@@ -434,7 +449,7 @@ const ConfidentialWorkloadsList: FC = () => {
                     <Timestamp timestamp={w.creationTimestamp} />
                   </Td>
                   <Td isActionCell>
-                    <RowActions w={w} onDelete={setToDelete} />
+                    <RowActions w={w} onDelete={setToDelete} onVerify={setToVerify} />
                   </Td>
                 </Tr>
               ))}
@@ -473,6 +488,49 @@ const ConfidentialWorkloadsList: FC = () => {
               }}
             >
               {t('Cancel')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {toVerify && (
+        <Modal
+          isOpen
+          variant="medium"
+          onClose={() => {
+            setToVerify(undefined);
+          }}
+        >
+          <ModalHeader title={t('Verify attestation')} />
+          <ModalBody>
+            <p className="coco-openshift-console-plugin__mb">
+              {t(
+                'A confidential pod attests to Trustee on boot. Check the result from the Confidential Data Hub inside the guest — run this against the pod and expect the response "success":',
+              )}
+            </p>
+            <ClipboardCopy
+              isReadOnly
+              isExpanded
+              variant="expansion"
+              hoverTip={t('Copy')}
+              clickTip={t('Copied')}
+            >
+              {`oc exec -n ${toVerify.namespace} ${toVerify.name} -- curl -sS http://127.0.0.1:8006/cdh/resource/default/attestation-status/status`}
+            </ClipboardCopy>
+            <p className="coco-openshift-console-plugin__mt coco-openshift-console-plugin__muted">
+              {t(
+                'A non-success response (or a connection error) means the guest could not reach Trustee or its TEE evidence was rejected. The attestation-status resource must be configured in Trustee for this check to return a value.',
+              )}
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="link"
+              onClick={() => {
+                setToVerify(undefined);
+              }}
+            >
+              {t('Close')}
             </Button>
           </ModalFooter>
         </Modal>

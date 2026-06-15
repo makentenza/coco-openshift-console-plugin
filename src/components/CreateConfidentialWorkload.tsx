@@ -187,6 +187,10 @@ const CreateConfidentialWorkload: FC = () => {
   const [evidenceCdhPath, setEvidenceCdhPath] = useState('default/kbsres1/key1');
   const [evidenceInterval, setEvidenceInterval] = useState('60');
 
+  // PodSecurity "restricted": the always-safe context fields are set unconditionally;
+  // runAsNonRoot is opt-out because it blocks images that must run as root.
+  const [runAsNonRoot, setRunAsNonRoot] = useState(true);
+
   const [storageClasses] = useK8sWatchResource<StorageClassKind[]>({
     groupVersionKind: StorageClassGVK,
     isList: true,
@@ -276,11 +280,21 @@ const CreateConfidentialWorkload: FC = () => {
     const encVolumeDevices = enc
       ? [{ name: 'enc-vol', devicePath: devicePath.trim() || '/dev/encblock' }]
       : undefined;
+    // Restricted PodSecurity context for the workload + evidence sidecar (not the
+    // LUKS init container, which needs privileges to open the device). runAsNonRoot
+    // is included only when the user kept it enabled — root images need it off.
+    const securityContext = {
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+      seccompProfile: { type: 'RuntimeDefault' },
+      ...(runAsNonRoot ? { runAsNonRoot: true } : {}),
+    };
     const container = {
       name: name.trim(),
       image: image.trim(),
       ...(cmd ? { command: cmd } : {}),
       ...(encVolumeDevices ? { volumeDevices: encVolumeDevices } : {}),
+      securityContext,
     };
     const annotations = initdataValue ? { [CC_INIT_DATA_ANNOTATION]: initdataValue } : undefined;
 
@@ -312,6 +326,7 @@ const CreateConfidentialWorkload: FC = () => {
           name: 'attestation-evidence',
           image: EVIDENCE_SIDECAR_IMAGE,
           command: ['bash', '-c', SIDECAR_SCRIPT],
+          securityContext,
           resources: {
             requests: { cpu: '10m', memory: '32Mi' },
             limits: { cpu: '50m', memory: '64Mi' },
@@ -837,6 +852,20 @@ const CreateConfidentialWorkload: FC = () => {
                       </FormGroup>
                     </>
                   )}
+
+                  <FormGroup fieldId="cw-nonroot">
+                    <Checkbox
+                      id="cw-nonroot"
+                      label={t('Run as non-root')}
+                      description={t(
+                        'Adds runAsNonRoot: true so the pod meets the restricted Pod Security Standard (allowPrivilegeEscalation: false, dropped capabilities, and the RuntimeDefault seccomp profile are always set). Untick only if your image must run as root.',
+                      )}
+                      isChecked={runAsNonRoot}
+                      onChange={(_e, checked) => {
+                        setRunAsNonRoot(checked);
+                      }}
+                    />
+                  </FormGroup>
 
                   {error && (
                     <Alert variant="danger" isInline title={t('Could not create workload')}>

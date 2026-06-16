@@ -10,11 +10,13 @@ import { Alert, Button, Label, Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon } from '@patternfly/react-icons';
 import {
   CustomResourceDefinitionGVK,
+  EndpointsGVK,
   INTEL_DEVICE_PLUGINS_CHANNEL,
   INTEL_DEVICE_PLUGINS_INSTALL_NS,
   INTEL_DEVICE_PLUGINS_OPERATOR,
   INTEL_DEVICE_PLUGINS_SOURCE,
   INTEL_DEVICE_PLUGINS_SOURCE_NS,
+  INTEL_DEVICE_PLUGINS_WEBHOOK_SVC,
   SGX_DEVICEPLUGIN_CR_NAME,
   SGX_DEVICEPLUGIN_CRD,
   SGX_NODE_SELECTOR_LABEL,
@@ -27,6 +29,8 @@ import './coco.css';
 const PREFIX = 'coco-openshift-console-plugin';
 const isAlreadyExists = (e: unknown): boolean =>
   /already exists|alreadyexists|conflict|409/i.test(e instanceof Error ? e.message : String(e));
+
+type EndpointsKind = K8sResourceCommon & { subsets?: { addresses?: { ip?: string }[] }[] };
 
 type Props = {
   /** True once the node advertises sgx.intel.com/enclave + /provision (plugin live). */
@@ -59,9 +63,30 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
   ) as [K8sResourceCommon[] | undefined, boolean, unknown];
   const crExists = (crs ?? []).length > 0;
 
-  // Once the operator is installed, create the SgxDevicePlugin CR (once).
+  // Is the operator's admission webhook actually serving? The CRD is established a
+  // beat before the controller-manager pod backs its webhook service, so applying the
+  // CR too early fails with "no endpoints available". Gate on the endpoints existing.
+  const [endpoints] = useK8sWatchResource<EndpointsKind>(
+    crdReady
+      ? {
+          groupVersionKind: EndpointsGVK,
+          name: INTEL_DEVICE_PLUGINS_WEBHOOK_SVC,
+          namespace: INTEL_DEVICE_PLUGINS_INSTALL_NS,
+        }
+      : null,
+  ) as [EndpointsKind | undefined, boolean, unknown];
+  const webhookReady = (endpoints?.subsets ?? []).some((s) => (s.addresses?.length ?? 0) > 0);
+
+  // Bumped on each (re)try so the create effect re-fires even when `started` is
+  // already true (e.g. retry after the webhook-not-ready race, or a manual click
+  // when the operator is already installed).
+  const [attempt, setAttempt] = useState(0);
+
+  // Create the SgxDevicePlugin CR once the operator is installed AND its webhook is
+  // serving. The ref guard is released on a real failure so a later state change (or
+  // a retry click bumping `attempt`) re-attempts.
   useEffect(() => {
-    if (!started || !crdReady || crExists || crCreatedRef.current) return;
+    if (!started || !crdReady || !webhookReady || crExists || crCreatedRef.current) return;
     crCreatedRef.current = true;
     void (async () => {
       try {
@@ -79,17 +104,20 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
           },
         });
       } catch (e) {
-        if (!isAlreadyExists(e)) setError(e instanceof Error ? e.message : String(e));
+        if (!isAlreadyExists(e)) {
+          crCreatedRef.current = false;
+          setError(e instanceof Error ? e.message : String(e));
+        }
       }
     })();
-  }, [started, crdReady, crExists]);
+  }, [started, crdReady, webhookReady, crExists, attempt]);
 
   const onInstall = async () => {
     setBusy(true);
     setError('');
     try {
-      // Subscribe to the operator if it isn't installed yet; the CR is created by
-      // the effect once the CRD appears.
+      // Subscribe to the operator if it isn't installed yet; the CR is created by the
+      // effect once the operator's CRD + webhook are ready.
       if (!crdReady) {
         try {
           await k8sCreate({
@@ -114,7 +142,9 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
           if (!isAlreadyExists(e)) throw e;
         }
       }
+      crCreatedRef.current = false; // allow (re)create
       setStarted(true);
+      setAttempt((n) => n + 1); // re-fire the create effect (retry / already-installed)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -131,14 +161,18 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
   }
 
   const installing = started && !crdReady;
-  const creating = started && crdReady && !crExists;
+  const waitingWebhook = started && crdReady && !webhookReady && !crExists;
+  const creating = started && crdReady && webhookReady && !crExists;
+  const inFlight = !error && (busy || installing || waitingWebhook || creating);
   const status = crExists
     ? t('SGX device plugin created — waiting for the node to advertise enclave/provision…')
     : creating
-      ? t('Operator ready — creating the SGX device plugin…')
-      : installing
-        ? t('Installing the Intel Device Plugins Operator (this can take a minute)…')
-        : '';
+      ? t('Creating the SGX device plugin…')
+      : waitingWebhook
+        ? t('Operator installed — waiting for its admission webhook to start…')
+        : installing
+          ? t('Installing the Intel Device Plugins Operator (this can take a minute)…')
+          : '';
 
   return (
     <div>
@@ -146,13 +180,17 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
         <Button
           variant="secondary"
           onClick={() => void onInstall()}
-          isLoading={busy || installing || creating}
-          isDisabled={busy || started}
+          isLoading={inFlight}
+          isDisabled={inFlight || (started && !error)}
         >
-          {crdReady ? t('Create SGX device plugin') : t('Install Intel SGX device plugin')}
+          {error
+            ? t('Retry')
+            : crdReady
+              ? t('Create SGX device plugin')
+              : t('Install Intel SGX device plugin')}
         </Button>
       )}
-      {status && (
+      {status && !error && (
         <div className={`${PREFIX}__mt ${PREFIX}__muted`}>
           <Spinner size="sm" /> {status}
         </div>

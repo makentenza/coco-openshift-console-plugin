@@ -360,6 +360,10 @@ export const SGX_DEVICEPLUGIN_CRD = 'sgxdeviceplugins.deviceplugin.intel.com';
 export const SGX_DEVICEPLUGIN_CR_NAME = 'sgxdeviceplugin';
 /** NFD label the SGX device plugin selects on (TDX nodes carry it too). */
 export const SGX_NODE_SELECTOR_LABEL = 'intel.feature.node.kubernetes.io/sgx';
+/** Endpoints — watched to know when the operator's admission webhook is serving. */
+export const EndpointsGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Endpoints' };
+/** The operator's webhook service; its endpoints must be populated before the CR applies. */
+export const INTEL_DEVICE_PLUGINS_WEBHOOK_SVC = 'intel-deviceplugins-controller-manager-service';
 
 // `kind~group~version` reference string for action/flag extensions.
 export const KataConfigModelRef = 'kataconfiguration.openshift.io~v1~KataConfig';

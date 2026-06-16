@@ -14,6 +14,7 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  ExternalLinkAltIcon,
   InfoCircleIcon,
   PlusCircleIcon,
 } from '@patternfly/react-icons';
@@ -78,6 +79,12 @@ const CocoSetup: FC = () => {
     [runtimeClasses],
   );
   const ccRuntimeReady = confidentialRCs.length > 0;
+  // Which TEEs are present, so the attestation-infrastructure step is chip-aware.
+  const teeKinds = {
+    tdx: teeNodes.some((n) => n.tee === 'tdx'),
+    snp: teeNodes.some((n) => n.tee === 'snp'),
+    gpu: teeNodes.some((n) => n.gpuCcReady),
+  };
 
   const steps: Step[] = [
     {
@@ -146,6 +153,63 @@ const CocoSetup: FC = () => {
         )
       ),
       node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
+    },
+    {
+      title: t('Attestation infrastructure (TEE quote generation)'),
+      // Can't auto-verify the host quote-generation stack, but it's the most
+      // commonly-missed prerequisite — without it every attestation fails with an
+      // empty quote, so flag it for review.
+      status: 'warn',
+      detail: (
+        <>
+          {t(
+            'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
+          )}
+          <ul className="coco-openshift-console-plugin__mt">
+            {teeKinds.tdx && (
+              <li>
+                {t(
+                  'Intel TDX — deploy a Quote Generation Service (QGS) and a PCCS for PCK collateral (Intel DCAP). The guest reaches the QGS over vsock.',
+                )}
+              </li>
+            )}
+            {teeKinds.snp && (
+              <li>
+                {t(
+                  'AMD SEV-SNP — the attestation report is generated in-guest; ensure the Trustee SNP verifier can fetch VCEK collateral from the AMD KDS.',
+                )}
+              </li>
+            )}
+            {teeKinds.gpu && (
+              <li>
+                {t(
+                  'NVIDIA GPU — confidential GPU attestation uses NVIDIA NRAS; ensure the Trustee NVIDIA GPU verifier is configured.',
+                )}
+              </li>
+            )}
+            {!teeKinds.tdx && !teeKinds.snp && !teeKinds.gpu && (
+              <li>
+                {t(
+                  'Match the quote-generation stack to your TEE — Intel TDX: QGS + PCCS; AMD SEV-SNP: AMD KDS; NVIDIA GPU: NRAS.',
+                )}
+              </li>
+            )}
+          </ul>
+        </>
+      ),
+      node: (
+        <Button
+          variant="secondary"
+          component="a"
+          href="https://docs.redhat.com/en/documentation/openshift_sandboxed_containers"
+          target="_blank"
+          rel="noopener noreferrer"
+          icon={<ExternalLinkAltIcon />}
+          iconPosition="end"
+        >
+          {t('Attestation setup docs')}
+        </Button>
+      ),
     },
     {
       title: t('Run a confidential workload'),

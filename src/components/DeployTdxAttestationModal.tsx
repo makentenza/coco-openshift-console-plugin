@@ -1,4 +1,4 @@
-import type { FC } from 'react';
+import type { FC, ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,6 +14,8 @@ import {
   ClipboardCopyVariant,
   Content,
   ExpandableSection,
+  Flex,
+  FlexItem,
   Form,
   FormGroup,
   FormHelperText,
@@ -31,7 +33,12 @@ import {
   ProgressStepper,
   TextInput,
 } from '@patternfly/react-core';
-import { ExternalLinkAltIcon } from '@patternfly/react-icons';
+import {
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ExternalLinkAltIcon,
+  InfoCircleIcon,
+} from '@patternfly/react-icons';
 import {
   ClusterRoleBindingModel,
   DaemonSetGVK,
@@ -50,6 +57,8 @@ import {
   UBI9_IMAGE,
 } from '../k8s/resources';
 import type { DaemonSetKind, DeploymentKind, JobKind, NodeKind } from '../k8s/types';
+import { sgxCapable, sgxDevicePluginReady, TDX_LABEL } from '../utils/tee';
+import { InstallSgxDevicePlugin } from './InstallSgxDevicePlugin';
 import './coco.css';
 
 const PREFIX = 'coco-openshift-console-plugin';
@@ -70,6 +79,49 @@ const isControlPlane = (n: NodeKind): boolean => {
     'node-role.kubernetes.io/control-plane' in labels || 'node-role.kubernetes.io/master' in labels
   );
 };
+
+type PrereqStatus = 'ok' | 'warn' | 'info';
+const PrereqIcon: FC<{ status: PrereqStatus }> = ({ status }) => {
+  if (status === 'ok')
+    return <CheckCircleIcon color="var(--pf-t--global--icon--color--status--success--default)" />;
+  if (status === 'info')
+    return <InfoCircleIcon color="var(--pf-t--global--icon--color--status--info--default)" />;
+  return (
+    <ExclamationTriangleIcon color="var(--pf-t--global--icon--color--status--warning--default)" />
+  );
+};
+
+/** One live prerequisite row: status icon, label, detail, and an optional action. */
+const PrereqRow: FC<{
+  status: PrereqStatus;
+  title: ReactNode;
+  detail?: ReactNode;
+  action?: ReactNode;
+}> = ({ status, title, detail, action }) => (
+  <Flex
+    alignItems={{ default: 'alignItemsFlexStart' }}
+    gap={{ default: 'gapSm' }}
+    justifyContent={{ default: 'justifyContentSpaceBetween' }}
+    className={`${PREFIX}__mb`}
+  >
+    <FlexItem grow={{ default: 'grow' }}>
+      <Flex
+        alignItems={{ default: 'alignItemsFlexStart' }}
+        gap={{ default: 'gapSm' }}
+        flexWrap={{ default: 'nowrap' }}
+      >
+        <FlexItem>
+          <PrereqIcon status={status} />
+        </FlexItem>
+        <FlexItem>
+          <strong>{title}</strong>
+          {detail && <div className={`${PREFIX}__muted`}>{detail}</div>}
+        </FlexItem>
+      </Flex>
+    </FlexItem>
+    {action && <FlexItem>{action}</FlexItem>}
+  </Flex>
+);
 
 /**
  * The in-cluster setup script — the OSC 1.12 "Deploying Intel TDX remote
@@ -164,8 +216,6 @@ const buildManualScript = (base: string, node: string): string =>
   ].join('\n');
 
 type Props = {
-  /** How many TDX-capable nodes are detected (drives the live prerequisite hint). */
-  tdxNodeCount: number;
   onClose: () => void;
 };
 
@@ -173,8 +223,10 @@ type Props = {
  * Guided, automated setup of the Intel TDX remote attestation infrastructure
  * (PCCS + per-node QGS). Automates every deployable step from the bare-metal CoCo
  * docs and prompts only for the one purely-manual input: the Intel PCS API key.
+ * Prerequisites are detected live from the actual node capabilities (TDX, SGX, the
+ * SGX device plugin) so each shows a real, current status.
  */
-const DeployTdxAttestationModal: FC<Props> = ({ tdxNodeCount, onClose }) => {
+const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
 
   const base = useMemo(() => oscDcapHelpersBase(), []);
@@ -188,8 +240,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ tdxNodeCount, onClose }) => {
   const [started, setStarted] = useState(false);
   const cleanedUpRef = useRef(false);
 
-  // Control-plane nodes — the PCCS pins to one of them (it caches PCK collateral on
-  // a host path and needs outbound access to the Intel PCS).
+  // Node capabilities, detected live from NFD labels + allocatable resources.
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
   const controlPlane = useMemo(
     () =>
@@ -199,6 +250,15 @@ const DeployTdxAttestationModal: FC<Props> = ({ tdxNodeCount, onClose }) => {
         .filter(Boolean),
     [nodes],
   );
+  const tdxNodes = useMemo(
+    () => (nodes ?? []).filter((n) => (n.metadata?.labels ?? {})[TDX_LABEL] === 'true'),
+    [nodes],
+  );
+  const tdxNodeCount = tdxNodes.length;
+  // TDX quotes are signed inside an SGX enclave, so the QGS needs SGX. These reflect
+  // what the TDX node(s) actually report.
+  const sgxCapableOk = tdxNodes.length > 0 && tdxNodes.every(sgxCapable);
+  const sgxPluginReady = tdxNodes.length > 0 && tdxNodes.some(sgxDevicePluginReady);
   // Effective PCCS node: the user's pick, else the first control-plane node. (The
   // Job also auto-detects when this is left blank.)
   const effectivePccsNode = pccsNode || controlPlane[0] || '';
@@ -404,43 +464,64 @@ const DeployTdxAttestationModal: FC<Props> = ({ tdxNodeCount, onClose }) => {
           )}
         </Alert>
 
-        <Alert variant="warning" isInline title={t('Before you start')} className={`${PREFIX}__mb`}>
-          <List>
-            <ListItem>
-              {t(
-                'This runs as a temporary cluster-admin Job — it creates a namespace, grants the privileged SCC, and applies a privileged DaemonSet. You must be a cluster administrator.',
+        <Alert
+          variant={sgxPluginReady && sgxCapableOk && tdxNodeCount > 0 ? 'info' : 'warning'}
+          isInline
+          title={t('Prerequisites (detected from your nodes)')}
+          className={`${PREFIX}__mb`}
+        >
+          <div className={`${PREFIX}__mt`}>
+            <PrereqRow
+              status={tdxNodeCount > 0 ? 'ok' : 'warn'}
+              title={t('Intel TDX nodes')}
+              detail={
+                tdxNodeCount > 0
+                  ? t(
+                      '{{count}} node(s) labeled for TDX — the QGS DaemonSet schedules onto them.',
+                      {
+                        count: tdxNodeCount,
+                      },
+                    )
+                  : t(
+                      'None detected. Label your TDX nodes first (Detect TEE nodes), or the QGS has nowhere to run.',
+                    )
+              }
+            />
+            <PrereqRow
+              status={sgxCapableOk ? 'ok' : tdxNodeCount > 0 ? 'warn' : 'info'}
+              title={t('SGX quoting capability')}
+              detail={
+                sgxCapableOk
+                  ? t(
+                      'TDX quotes are signed by an SGX enclave on the host, and your TDX node(s) report SGX capability (NFD).',
+                    )
+                  : t(
+                      'TDX quote generation runs in an SGX enclave. The TDX node(s) do not report SGX yet — check firmware and NFD.',
+                    )
+              }
+            />
+            <PrereqRow
+              status={sgxPluginReady ? 'ok' : 'warn'}
+              title={t('Intel SGX device plugin')}
+              detail={
+                sgxPluginReady
+                  ? t(
+                      'The node advertises sgx.intel.com/enclave + /provision, so the QGS can schedule.',
+                    )
+                  : t(
+                      'Not installed — the QGS stays Pending until sgx.intel.com/enclave + /provision are advertised:',
+                    )
+              }
+              action={sgxPluginReady ? undefined : <InstallSgxDevicePlugin ready={false} />}
+            />
+            <PrereqRow
+              status="info"
+              title={t('Cluster-admin + network')}
+              detail={t(
+                'Runs as a temporary cluster-admin Job (namespace, privileged SCC, privileged DaemonSet). The PCCS control-plane node needs outbound access to the Intel PCS, and your Intel TDX MachineConfig must be applied.',
               )}
-            </ListItem>
-            <ListItem>
-              {tdxNodeCount > 0
-                ? t(
-                    '{{count}} Intel TDX node(s) detected — the QGS DaemonSet schedules onto them.',
-                    {
-                      count: tdxNodeCount,
-                    },
-                  )
-                : t(
-                    'No Intel TDX nodes detected yet. Label them first (Detect TEE nodes) or the QGS DaemonSet will have nowhere to run.',
-                  )}
-            </ListItem>
-            <ListItem>
-              {t(
-                'The Intel SGX device plugin must be installed (Intel Device Plugins Operator) — the QGS requests sgx.intel.com/epc, /enclave and /provision.',
-              )}{' '}
-              <a
-                href="/operatorhub/all-namespaces?keyword=Intel+Device+Plugins"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('Install it')}
-              </a>
-            </ListItem>
-            <ListItem>
-              {t(
-                'The chosen control-plane (PCCS) node needs outbound internet access to reach the Intel PCS, and your Intel TDX MachineConfig must already be applied.',
-              )}
-            </ListItem>
-          </List>
+            />
+          </div>
         </Alert>
 
         <Form>

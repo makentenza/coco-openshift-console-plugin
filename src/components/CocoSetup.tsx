@@ -92,7 +92,9 @@ const CocoSetup: FC = () => {
     snp: teeNodes.some((n) => n.tee === 'snp'),
     gpu: teeNodes.some((n) => n.gpuCcReady),
   };
-  const tdxNodeCount = teeNodes.filter((n) => n.tee === 'tdx').length;
+  // Is the Intel SGX device plugin advertising enclave/provision on the TDX node(s)?
+  // TDX quotes are signed by an SGX enclave, so the QGS needs it to schedule.
+  const sgxPluginReady = teeNodes.some((n) => n.tee === 'tdx' && n.sgxDevicePlugin);
 
   // Live status of the Intel TDX remote-attestation infrastructure (PCCS + QGS).
   // Named-resource watches 404 silently when absent; we only read readiness.
@@ -111,6 +113,9 @@ const CocoSetup: FC = () => {
   const attestPresent = Boolean(pccsDep?.metadata) || Boolean(qgsDs?.metadata);
   const attestReady =
     (pccsDep?.status?.availableReplicas ?? 0) > 0 && qgsDesired > 0 && qgsReady >= qgsDesired;
+  // QGS deployed but not running, and the SGX device plugin isn't advertising — the
+  // classic "QGS Pending" cause.
+  const qgsBlockedOnSgx = attestPresent && qgsReady < Math.max(qgsDesired, 1) && !sgxPluginReady;
 
   const [tdxSetupOpen, setTdxSetupOpen] = useState(false);
 
@@ -219,9 +224,13 @@ const CocoSetup: FC = () => {
       ) : (
         <>
           {attestPresent
-            ? t(
-                'The Intel TDX attestation infrastructure is deploying in intel-dcap. It is ready once PCCS is available and the QGS DaemonSet is running on your TDX nodes.',
-              )
+            ? qgsBlockedOnSgx
+              ? t(
+                  'PCCS is up, but the QGS DaemonSet is Pending: the Intel SGX device plugin is not advertising sgx.intel.com/enclave + /provision yet. Open the setup to install it (TDX quotes are signed by an SGX enclave).',
+                )
+              : t(
+                  'The Intel TDX attestation infrastructure is deploying in intel-dcap. It is ready once PCCS is available and the QGS DaemonSet is running on your TDX nodes.',
+                )
             : t(
                 'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
               )}
@@ -360,12 +369,7 @@ const CocoSetup: FC = () => {
           </CardBody>
         </Card>
       </PageSection>
-      {tdxSetupOpen && (
-        <DeployTdxAttestationModal
-          tdxNodeCount={tdxNodeCount}
-          onClose={() => setTdxSetupOpen(false)}
-        />
-      )}
+      {tdxSetupOpen && <DeployTdxAttestationModal onClose={() => setTdxSetupOpen(false)} />}
     </>
   );
 };

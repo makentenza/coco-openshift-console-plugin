@@ -55,10 +55,12 @@ export type StorageClassKind = K8sResourceCommon & {
   metadata?: K8sResourceCommon['metadata'] & { annotations?: Record<string, string> };
 };
 
-/** A v1 Node — we read labels (TEE/GPU-CC) and Ready condition. */
+/** A v1 Node — we read labels (TEE/GPU-CC), allocatable (device resources) and Ready. */
 export type NodeKind = K8sResourceCommon & {
   status?: {
     conditions?: { type: string; status: string }[];
+    allocatable?: Record<string, string>;
+    capacity?: Record<string, string>;
   };
 };
 
@@ -145,6 +147,10 @@ export interface TeeNode {
   tee: TeeType;
   gpuCcReady: boolean;
   ready: boolean;
+  /** Intel SGX detected by NFD (TDX quote generation runs in an SGX enclave). */
+  sgxCapable: boolean;
+  /** Intel SGX device plugin is advertising sgx.intel.com/enclave + /provision. */
+  sgxDevicePlugin: boolean;
   obj: NodeKind;
 }
 

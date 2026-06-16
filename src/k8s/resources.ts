@@ -312,5 +312,54 @@ export const oscDcapHelpersBase = (tag: string = OSC_DCAP_HELPERS_TAG): string =
 /** Intel Trusted Services API portal — where the operator subscribes for the PCS API key. */
 export const INTEL_PCS_PORTAL_URL = 'https://api.portal.trustedservices.intel.com';
 
+// ---- Intel SGX device plugin (prereq for TDX quote generation) ----
+// TDX quotes are signed by an SGX quoting enclave, so the QGS requests
+// sgx.intel.com/enclave + /provision — advertised by the Intel SGX device plugin.
+export const SgxDevicePluginGVK: K8sGroupVersionKind = {
+  group: 'deviceplugin.intel.com',
+  version: 'v1',
+  kind: 'SgxDevicePlugin',
+};
+/** Cluster-scoped SgxDevicePlugin CR — deploys the SGX device-plugin DaemonSet. */
+export const SgxDevicePluginModel: K8sModel = {
+  apiGroup: 'deviceplugin.intel.com',
+  apiVersion: 'v1',
+  kind: 'SgxDevicePlugin',
+  plural: 'sgxdeviceplugins',
+  namespaced: false,
+  abbr: 'SGX',
+  label: 'SgxDevicePlugin',
+  labelPlural: 'SgxDevicePlugins',
+  crd: true,
+};
+export const SubscriptionModel: K8sModel = {
+  apiGroup: 'operators.coreos.com',
+  apiVersion: 'v1alpha1',
+  kind: 'Subscription',
+  plural: 'subscriptions',
+  namespaced: true,
+  abbr: 'SUB',
+  label: 'Subscription',
+  labelPlural: 'Subscriptions',
+  crd: true,
+};
+/** apiextensions.k8s.io/v1 CustomResourceDefinition — watched to know when the operator is ready. */
+export const CustomResourceDefinitionGVK: K8sGroupVersionKind = {
+  group: 'apiextensions.k8s.io',
+  version: 'v1',
+  kind: 'CustomResourceDefinition',
+};
+
+export const INTEL_DEVICE_PLUGINS_OPERATOR = 'intel-device-plugins-operator';
+export const INTEL_DEVICE_PLUGINS_CHANNEL = 'stable';
+export const INTEL_DEVICE_PLUGINS_SOURCE = 'certified-operators';
+export const INTEL_DEVICE_PLUGINS_SOURCE_NS = 'openshift-marketplace';
+/** AllNamespaces operator — installs into the global operators namespace. */
+export const INTEL_DEVICE_PLUGINS_INSTALL_NS = 'openshift-operators';
+export const SGX_DEVICEPLUGIN_CRD = 'sgxdeviceplugins.deviceplugin.intel.com';
+export const SGX_DEVICEPLUGIN_CR_NAME = 'sgxdeviceplugin';
+/** NFD label the SGX device plugin selects on (TDX nodes carry it too). */
+export const SGX_NODE_SELECTOR_LABEL = 'intel.feature.node.kubernetes.io/sgx';
+
 // `kind~group~version` reference string for action/flag extensions.
 export const KataConfigModelRef = 'kataconfiguration.openshift.io~v1~KataConfig';

@@ -4,10 +4,10 @@ import {
   ListPageHeader,
   ResourceLink,
   Timestamp,
+  useK8sWatchResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
   Button,
-  ClipboardCopy,
   Dropdown,
   DropdownItem,
   DropdownList,
@@ -30,37 +30,55 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core';
 import { EllipsisVIcon } from '@patternfly/react-icons';
-import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useConfidentialWorkloads } from '../k8s/hooks';
-import { DeploymentGVK, DeploymentModel, NamespaceGVK, PodGVK, PodModel } from '../k8s/resources';
-import type { CcWorkload } from '../k8s/types';
+import {
+  ConfigMapGVK,
+  DeploymentGVK,
+  DeploymentModel,
+  NamespaceGVK,
+  PodGVK,
+  PodModel,
+} from '../k8s/resources';
+import type { CcWorkload, ConfigMapKind } from '../k8s/types';
 import { statusCategory, statusColor } from '../utils/status';
+import {
+  EVIDENCE_LABEL,
+  evidenceCmName,
+  parseEvidence,
+  type EvidenceRecord,
+} from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
+import { WorkloadAttestationDetail } from './WorkloadAttestationDetail';
 import './coco.css';
 
+// Column order: expand, Name, Namespace, Kind, Runtime, Confidentiality, Initdata,
+// Status, Attestation, Restarts, Node, Created, Actions.
 const SORTABLE_FIELDS: (keyof CcWorkload | null)[] = [
+  null, // expand toggle
   'name',
   'namespace',
   'kind',
-  null,
-  null,
-  null,
+  null, // runtime class
+  null, // confidentiality
+  null, // initdata
   'status',
-  null,
-  null,
+  null, // attestation
+  null, // restarts
+  null, // node
   'creationTimestamp',
+  null, // actions
 ];
 
 const RowActions: FC<{
   w: CcWorkload;
   onDelete: (w: CcWorkload) => void;
-  onVerify: (w: CcWorkload) => void;
-}> = ({ w, onDelete, onVerify }) => {
+}> = ({ w, onDelete }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [open, setOpen] = useState(false);
   return (
@@ -82,15 +100,6 @@ const RowActions: FC<{
       )}
     >
       <DropdownList>
-        {w.kind === 'Pod' && (
-          <DropdownItem
-            onClick={() => {
-              onVerify(w);
-            }}
-          >
-            {t('Verify attestation')}
-          </DropdownItem>
-        )}
         <DropdownItem
           onClick={() => {
             onDelete(w);
@@ -166,8 +175,46 @@ const ConfidentialWorkloadsList: FC = () => {
   const [statusOpen, setStatusOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ISortBy>({});
   const [toDelete, setToDelete] = useState<CcWorkload | undefined>();
-  const [toVerify, setToVerify] = useState<CcWorkload | undefined>();
   const [deleting, setDeleting] = useState(false);
+
+  // Expandable per-workload attestation detail.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const isOpen = (uid: string) => expanded.has(uid);
+  const toggle = (uid: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+
+  // Self-reported attestation evidence: ConfigMaps the in-guest sidecar publishes
+  // (no exec). Keyed by namespace/<configmap-name> so each workload finds its own.
+  const [evidenceCms] = useK8sWatchResource<ConfigMapKind[]>({
+    groupVersionKind: ConfigMapGVK,
+    isList: true,
+    selector: { matchLabels: { [EVIDENCE_LABEL]: 'true' } },
+  });
+  const evidenceByKey = useMemo(() => {
+    const m = new Map<string, EvidenceRecord>();
+    for (const cm of evidenceCms ?? []) {
+      const rec = parseEvidence(cm.data?.['evidence.json']);
+      if (rec) m.set(`${cm.metadata?.namespace ?? ''}/${cm.metadata?.name ?? ''}`, rec);
+    }
+    return m;
+  }, [evidenceCms]);
+  const evidenceFor = (w: CcWorkload): EvidenceRecord | undefined =>
+    evidenceByKey.get(`${w.namespace}/${evidenceCmName(w.name)}`);
+  const evidenceVerdictLabel = (
+    ev?: EvidenceRecord,
+  ): { color: 'green' | 'red' | 'orange' | 'grey'; text: string } =>
+    ev?.verdict === 'passed'
+      ? { color: 'green', text: t('attested') }
+      : ev?.verdict === 'failed'
+        ? { color: 'red', text: t('rejected') }
+        : ev?.verdict === 'inconclusive'
+          ? { color: 'orange', text: t('inconclusive') }
+          : { color: 'grey', text: t('no sidecar') };
 
   const namespaces = useMemo(
     () => [...new Set(workloads.map((w) => w.namespace))].sort(),
@@ -378,81 +425,112 @@ const ConfidentialWorkloadsList: FC = () => {
           <Table aria-label={t('Confidential workloads')} variant="compact">
             <Thead>
               <Tr>
-                <Th sort={getSortParams(0)}>{t('Name')}</Th>
-                <Th sort={getSortParams(1)}>{t('Namespace')}</Th>
-                <Th sort={getSortParams(2)}>{t('Kind')}</Th>
+                <Th screenReaderText={t('Expand row')} />
+                <Th sort={getSortParams(1)}>{t('Name')}</Th>
+                <Th sort={getSortParams(2)}>{t('Namespace')}</Th>
+                <Th sort={getSortParams(3)}>{t('Kind')}</Th>
                 <Th>{t('Runtime class')}</Th>
                 <Th>{t('Confidentiality')}</Th>
                 <Th>{t('Initdata')}</Th>
-                <Th sort={getSortParams(6)}>{t('Status')}</Th>
+                <Th sort={getSortParams(7)}>{t('Status')}</Th>
+                <Th>{t('Attestation')}</Th>
                 <Th>{t('Restarts')}</Th>
                 <Th>{t('Node')}</Th>
-                <Th sort={getSortParams(9)}>{t('Created')}</Th>
+                <Th sort={getSortParams(11)}>{t('Created')}</Th>
                 <Th screenReaderText={t('Actions')} />
               </Tr>
             </Thead>
             <Tbody>
-              {rows.map((w) => (
-                <Tr key={w.uid}>
-                  <Td dataLabel={t('Name')}>
-                    <ResourceLink
-                      groupVersionKind={w.kind === 'Pod' ? PodGVK : DeploymentGVK}
-                      name={w.name}
-                      namespace={w.namespace}
-                      hideIcon
-                    />
-                  </Td>
-                  <Td dataLabel={t('Namespace')}>
-                    <ResourceLink groupVersionKind={NamespaceGVK} name={w.namespace} linkTo />
-                  </Td>
-                  <Td dataLabel={t('Kind')}>{w.kind}</Td>
-                  <Td
-                    dataLabel={t('Runtime class')}
-                    className="coco-openshift-console-plugin__mono"
-                  >
-                    {w.runtimeClass}
-                  </Td>
-                  <Td dataLabel={t('Confidentiality')}>
-                    <CcClassLabel ccClass={w.ccClass} isCompact />
-                  </Td>
-                  <Td dataLabel={t('Initdata')}>
-                    {w.hasInitData ? (
-                      <Label color="green" isCompact>
-                        {t('Yes')}
-                      </Label>
-                    ) : (
-                      <Label color="grey" isCompact>
-                        {t('No')}
-                      </Label>
-                    )}
-                  </Td>
-                  <Td dataLabel={t('Status')}>
-                    <Label color={statusColor(w.status)} isCompact>
-                      {w.ready ? `${w.status} (${w.ready})` : w.status}
-                    </Label>
-                  </Td>
-                  <Td dataLabel={t('Restarts')}>
-                    {w.kind === 'Pod' ? (
-                      (w.restarts ?? 0)
-                    ) : (
-                      <span className="coco-openshift-console-plugin__muted">—</span>
-                    )}
-                  </Td>
-                  <Td dataLabel={t('Node')}>
-                    {w.node ? (
-                      <span className="coco-openshift-console-plugin__mono">{w.node}</span>
-                    ) : (
-                      <span className="coco-openshift-console-plugin__muted">—</span>
-                    )}
-                  </Td>
-                  <Td dataLabel={t('Created')}>
-                    <Timestamp timestamp={w.creationTimestamp} />
-                  </Td>
-                  <Td isActionCell>
-                    <RowActions w={w} onDelete={setToDelete} onVerify={setToVerify} />
-                  </Td>
-                </Tr>
-              ))}
+              {rows.map((w, rowIndex) => {
+                const ev = evidenceFor(w);
+                const verdict = evidenceVerdictLabel(ev);
+                return (
+                  <Fragment key={w.uid}>
+                    <Tr>
+                      <Td
+                        expand={{
+                          rowIndex,
+                          isExpanded: isOpen(w.uid),
+                          onToggle: () => {
+                            toggle(w.uid);
+                          },
+                          expandId: `att-${w.uid}`,
+                        }}
+                      />
+                      <Td dataLabel={t('Name')}>
+                        <ResourceLink
+                          groupVersionKind={w.kind === 'Pod' ? PodGVK : DeploymentGVK}
+                          name={w.name}
+                          namespace={w.namespace}
+                          hideIcon
+                        />
+                      </Td>
+                      <Td dataLabel={t('Namespace')}>
+                        <ResourceLink groupVersionKind={NamespaceGVK} name={w.namespace} linkTo />
+                      </Td>
+                      <Td dataLabel={t('Kind')}>{w.kind}</Td>
+                      <Td
+                        dataLabel={t('Runtime class')}
+                        className="coco-openshift-console-plugin__mono"
+                      >
+                        {w.runtimeClass}
+                      </Td>
+                      <Td dataLabel={t('Confidentiality')}>
+                        <CcClassLabel ccClass={w.ccClass} isCompact />
+                      </Td>
+                      <Td dataLabel={t('Initdata')}>
+                        {w.hasInitData ? (
+                          <Label color="green" isCompact>
+                            {t('Yes')}
+                          </Label>
+                        ) : (
+                          <Label color="grey" isCompact>
+                            {t('No')}
+                          </Label>
+                        )}
+                      </Td>
+                      <Td dataLabel={t('Status')}>
+                        <Label color={statusColor(w.status)} isCompact>
+                          {w.ready ? `${w.status} (${w.ready})` : w.status}
+                        </Label>
+                      </Td>
+                      <Td dataLabel={t('Attestation')}>
+                        <Label color={verdict.color} isCompact>
+                          {verdict.text}
+                        </Label>
+                      </Td>
+                      <Td dataLabel={t('Restarts')}>
+                        {w.kind === 'Pod' ? (
+                          (w.restarts ?? 0)
+                        ) : (
+                          <span className="coco-openshift-console-plugin__muted">—</span>
+                        )}
+                      </Td>
+                      <Td dataLabel={t('Node')}>
+                        {w.node ? (
+                          <span className="coco-openshift-console-plugin__mono">{w.node}</span>
+                        ) : (
+                          <span className="coco-openshift-console-plugin__muted">—</span>
+                        )}
+                      </Td>
+                      <Td dataLabel={t('Created')}>
+                        <Timestamp timestamp={w.creationTimestamp} />
+                      </Td>
+                      <Td isActionCell>
+                        <RowActions w={w} onDelete={setToDelete} />
+                      </Td>
+                    </Tr>
+                    <Tr isExpanded={isOpen(w.uid)}>
+                      <Td />
+                      <Td dataLabel={t('Attestation detail')} colSpan={12}>
+                        <ExpandableRowContent>
+                          <WorkloadAttestationDetail w={w} evidence={ev} />
+                        </ExpandableRowContent>
+                      </Td>
+                    </Tr>
+                  </Fragment>
+                );
+              })}
             </Tbody>
           </Table>
         )}
@@ -488,49 +566,6 @@ const ConfidentialWorkloadsList: FC = () => {
               }}
             >
               {t('Cancel')}
-            </Button>
-          </ModalFooter>
-        </Modal>
-      )}
-
-      {toVerify && (
-        <Modal
-          isOpen
-          variant="medium"
-          onClose={() => {
-            setToVerify(undefined);
-          }}
-        >
-          <ModalHeader title={t('Verify attestation')} />
-          <ModalBody>
-            <p className="coco-openshift-console-plugin__mb">
-              {t(
-                'A confidential pod attests to Trustee on boot. Check the result from the Confidential Data Hub inside the guest — run this against the pod and expect the response "success":',
-              )}
-            </p>
-            <ClipboardCopy
-              isReadOnly
-              isExpanded
-              variant="expansion"
-              hoverTip={t('Copy')}
-              clickTip={t('Copied')}
-            >
-              {`oc exec -n ${toVerify.namespace} ${toVerify.name} -- curl -sS http://127.0.0.1:8006/cdh/resource/default/attestation-status/status`}
-            </ClipboardCopy>
-            <p className="coco-openshift-console-plugin__mt coco-openshift-console-plugin__muted">
-              {t(
-                'A non-success response (or a connection error) means the guest could not reach Trustee or its TEE evidence was rejected. The attestation-status resource must be configured in Trustee for this check to return a value.',
-              )}
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="link"
-              onClick={() => {
-                setToVerify(undefined);
-              }}
-            >
-              {t('Close')}
             </Button>
           </ModalFooter>
         </Modal>

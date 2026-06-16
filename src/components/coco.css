@@ -217,3 +217,49 @@
 .coco-openshift-console-plugin__legend-dot--error {
   background-color: var(--pf-t--global--icon--color--status--danger--default);
 }
+
+/* ---- expanded workload attestation detail ---- */
+.coco-openshift-console-plugin__att-detail {
+  max-inline-size: 960px;
+}
+
+.coco-openshift-console-plugin__flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pf-t--global--spacer--sm, 0.5rem);
+}
+
+.coco-openshift-console-plugin__flow-step {
+  flex: 1 1 170px;
+  display: flex;
+  gap: var(--pf-t--global--spacer--sm, 0.5rem);
+  align-items: flex-start;
+  padding: var(--pf-t--global--spacer--sm, 0.5rem);
+  border: 1px solid var(--pf-t--global--border--color--default);
+  border-radius: var(--pf-t--global--border--radius--small, 3px);
+  background-color: var(--pf-t--global--background--color--primary--default);
+  font-size: var(--pf-t--global--font--size--sm, 0.875rem);
+}
+
+.coco-openshift-console-plugin__flow-step--on {
+  border-color: var(--pf-t--global--icon--color--status--success--default);
+}
+
+.coco-openshift-console-plugin__flow-n {
+  flex: 0 0 1.4rem;
+  block-size: 1.4rem;
+  inline-size: 1.4rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--pf-t--global--font--size--xs, 0.75rem);
+  font-weight: var(--pf-t--global--font--weight--body--bold, 700);
+  background-color: var(--pf-t--global--background--color--secondary--default);
+  color: var(--pf-t--global--text--color--regular);
+}
+
+.coco-openshift-console-plugin__flow-step--on .coco-openshift-console-plugin__flow-n {
+  background-color: var(--pf-t--global--icon--color--status--success--default);
+  color: var(--pf-t--global--background--color--primary--default);
+}

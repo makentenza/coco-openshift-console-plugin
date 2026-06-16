@@ -263,16 +263,21 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   // Job also auto-detects when this is left blank.)
   const effectivePccsNode = pccsNode || controlPlane[0] || '';
 
-  // Watch the Job + the two workloads it creates, once we've launched.
+  // Watch the Job only once we've launched; watch the two workloads always, so the
+  // wizard reflects already-deployed infrastructure when reopened.
   const [job] = useK8sWatchResource<JobKind>(
     started ? { groupVersionKind: JobGVK, name: SETUP_NAME, namespace: NS } : null,
   ) as [JobKind | undefined, boolean, unknown];
-  const [pccs] = useK8sWatchResource<DeploymentKind>(
-    started ? { groupVersionKind: DeploymentGVK, name: 'pccs', namespace: NS } : null,
-  ) as [DeploymentKind | undefined, boolean, unknown];
-  const [qgs] = useK8sWatchResource<DaemonSetKind>(
-    started ? { groupVersionKind: DaemonSetGVK, name: 'tdx-qgs', namespace: NS } : null,
-  ) as [DaemonSetKind | undefined, boolean, unknown];
+  const [pccs] = useK8sWatchResource<DeploymentKind>({
+    groupVersionKind: DeploymentGVK,
+    name: 'pccs',
+    namespace: NS,
+  }) as [DeploymentKind | undefined, boolean, unknown];
+  const [qgs] = useK8sWatchResource<DaemonSetKind>({
+    groupVersionKind: DaemonSetGVK,
+    name: 'tdx-qgs',
+    namespace: NS,
+  }) as [DaemonSetKind | undefined, boolean, unknown];
 
   const jobActive = (job?.status?.active ?? 0) > 0;
   const jobSucceeded = (job?.status?.succeeded ?? 0) > 0;
@@ -284,6 +289,9 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const qgsDesired = qgs?.status?.desiredNumberScheduled ?? 0;
   const qgsReady = qgs?.status?.numberReady ?? 0;
   const qgsUp = qgsDesired > 0 && qgsReady >= qgsDesired;
+  // The infrastructure is fully up (independent of whether we launched it this session).
+  const infraReady = pccsReady && qgsUp;
+  const prereqsMet = tdxNodeCount > 0 && sgxCapableOk && sgxPluginReady;
 
   const valid = apiKey.trim() !== '';
 
@@ -458,6 +466,25 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
     <Modal isOpen variant="large" onClose={onClose} aria-label={t('Set up Intel TDX attestation')}>
       <ModalHeader title={t('Set up Intel TDX remote attestation')} />
       <ModalBody>
+        {infraReady && (
+          <Alert
+            variant="success"
+            isInline
+            title={t('Attestation infrastructure is deployed and running')}
+            className={`${PREFIX}__mb`}
+          >
+            <p>
+              {t(
+                'PCCS is available and the QGS is ready on {{ready}}/{{desired}} node(s). Intel TDX pods can now produce a signed quote.',
+                { ready: qgsReady, desired: qgsDesired },
+              )}
+            </p>
+            <div className={`${PREFIX}__mt`}>
+              <ResourceLink groupVersionKind={DeploymentGVK} name="pccs" namespace={NS} inline />{' '}
+              <ResourceLink groupVersionKind={DaemonSetGVK} name="tdx-qgs" namespace={NS} inline />
+            </div>
+          </Alert>
+        )}
         <Alert variant="info" isInline title={t('What this sets up')} className={`${PREFIX}__mb`}>
           {t(
             'Intel TDX pods prove their identity with a signed TD quote. This deploys the host-side stack that produces and backs those quotes: an in-cluster Provisioning Certificate Caching Service (PCCS) that caches PCK certificates from Intel, automatic per-node platform registration, and a per-node Quote Generation Service (QGS) the guest reaches over vsock. Without it, attestation fails with an empty quote and Trustee never releases a secret.',
@@ -465,9 +492,11 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
         </Alert>
 
         <Alert
-          variant={sgxPluginReady && sgxCapableOk && tdxNodeCount > 0 ? 'info' : 'warning'}
+          variant={prereqsMet ? 'success' : 'warning'}
           isInline
-          title={t('Prerequisites (detected from your nodes)')}
+          title={
+            prereqsMet ? t('Prerequisites met') : t('Prerequisites (detected from your nodes)')
+          }
           className={`${PREFIX}__mb`}
         >
           <div className={`${PREFIX}__mt`}>
@@ -476,12 +505,9 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
               title={t('Intel TDX nodes')}
               detail={
                 tdxNodeCount > 0
-                  ? t(
-                      '{{count}} node(s) labeled for TDX — the QGS DaemonSet schedules onto them.',
-                      {
-                        count: tdxNodeCount,
-                      },
-                    )
+                  ? t('{{num}} node(s) labeled for TDX — the QGS DaemonSet schedules onto them.', {
+                      num: tdxNodeCount,
+                    })
                   : t(
                       'None detected. Label your TDX nodes first (Detect TEE nodes), or the QGS has nowhere to run.',
                     )
@@ -514,14 +540,12 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
               }
               action={sgxPluginReady ? undefined : <InstallSgxDevicePlugin ready={false} />}
             />
-            <PrereqRow
-              status="info"
-              title={t('Cluster-admin + network')}
-              detail={t(
-                'Runs as a temporary cluster-admin Job (namespace, privileged SCC, privileged DaemonSet). The PCCS control-plane node needs outbound access to the Intel PCS, and your Intel TDX MachineConfig must be applied.',
-              )}
-            />
           </div>
+          <Content component="small" className={`${PREFIX}__muted ${PREFIX}__mt`}>
+            {t(
+              'Note: this runs as a temporary cluster-admin Job (namespace, privileged SCC, privileged DaemonSet). The PCCS control-plane node needs outbound access to the Intel PCS, and your Intel TDX MachineConfig must be applied.',
+            )}
+          </Content>
         </Alert>
 
         <Form>
@@ -773,7 +797,20 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
         </Form>
       </ModalBody>
       <ModalFooter>
-        {!jobSucceeded ? (
+        {jobSucceeded ? (
+          <Button variant="primary" onClick={onClose}>
+            {t('Done')}
+          </Button>
+        ) : infraReady && !started ? (
+          <>
+            <Button variant="primary" onClick={onClose}>
+              {t('Done')}
+            </Button>
+            <Button variant="secondary" onClick={() => void onDeploy()} isDisabled={!valid || busy}>
+              {t('Re-deploy')}
+            </Button>
+          </>
+        ) : (
           <>
             <Button
               variant="primary"
@@ -787,10 +824,6 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
               {t('Cancel')}
             </Button>
           </>
-        ) : (
-          <Button variant="primary" onClick={onClose}>
-            {t('Done')}
-          </Button>
         )}
       </ModalFooter>
     </Modal>

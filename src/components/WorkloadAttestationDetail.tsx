@@ -107,6 +107,11 @@ export const WorkloadAttestationDetail: FC<{ w: CcWorkload; evidence?: EvidenceR
           ? { color: 'orange' as const, text: t('unreachable') }
           : { color: 'grey' as const, text: t('no evidence sidecar') };
 
+  // For an inconclusive self-report only the initdata-derived service is
+  // meaningful (the sidecar could not get a conclusive probe) — hide the flow
+  // and evidence cards.
+  const onlyService = evidence?.verdict === 'inconclusive';
+
   return (
     <Flex
       direction={{ default: 'column' }}
@@ -152,92 +157,96 @@ export const WorkloadAttestationDetail: FC<{ w: CcWorkload; evidence?: EvidenceR
         </Card>
       </FlexItem>
 
-      {/* How this workload is attested — the RCAR flow, lit when proven */}
-      <FlexItem>
-        <Card isCompact>
-          <CardTitle>{t('How this workload is attested')}</CardTitle>
-          <CardBody>
-            <div className={`${PREFIX}__flow`}>
-              {FLOW.map((s) => (
-                <div
-                  key={s.n}
-                  className={`${PREFIX}__flow-step${passed ? ` ${PREFIX}__flow-step--on` : ''}`}
-                >
-                  <span className={`${PREFIX}__flow-n`}>{s.n}</span>
-                  <div>
-                    <strong>{t(s.title)}</strong>
-                    <div className={`${PREFIX}__muted`}>{t(s.desc)}</div>
-                  </div>
+      {!onlyService && (
+        <>
+          {/* How this workload is attested — the RCAR flow, lit when proven */}
+          <FlexItem>
+            <Card isCompact>
+              <CardTitle>{t('How this workload is attested')}</CardTitle>
+              <CardBody>
+                <div className={`${PREFIX}__flow`}>
+                  {FLOW.map((s) => (
+                    <div
+                      key={s.n}
+                      className={`${PREFIX}__flow-step${passed ? ` ${PREFIX}__flow-step--on` : ''}`}
+                    >
+                      <span className={`${PREFIX}__flow-n`}>{s.n}</span>
+                      <div>
+                        <strong>{t(s.title)}</strong>
+                        <div className={`${PREFIX}__muted`}>{t(s.desc)}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <Content component="small" className={`${PREFIX}__muted ${PREFIX}__mt`}>
-              {passed
-                ? t(
-                    'This guest presented valid TEE evidence, Trustee verified it against the reference values, and the KBS released the sealed secret. That release is cryptographic proof of attestation.',
-                  )
-                : t(
-                    'Attestation happens inside the sealed guest. Deploy the workload with the attestation evidence sidecar to publish a verifiable proof here — a successful secret release confirms the flow above completed.',
-                  )}
-            </Content>
-          </CardBody>
-        </Card>
-      </FlexItem>
-
-      {/* Attestation evidence — the sidecar's self-report (no exec) */}
-      <FlexItem>
-        <Card isCompact>
-          <CardTitle>{t('Attestation evidence')}</CardTitle>
-          <CardBody>
-            {evidence ? (
-              <DescriptionList isHorizontal isCompact>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>{t('Verdict')}</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color={reach.color} isCompact>
-                      {evidence.verdict}
-                    </Label>{' '}
-                    {evidence.source === 'sidecar' && (
-                      <Label color="blue" isCompact>
-                        {t('live · self-reported')}
-                      </Label>
-                    )}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>{t('Secret released')}</DescriptionListTerm>
-                  <DescriptionListDescription className={`${PREFIX}__mono`}>
-                    {evidence.probe?.cdhPath ?? '—'}
-                    {evidence.probe?.httpStatus ? ` · HTTP ${evidence.probe.httpStatus}` : ''}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>{t('Reported')}</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {relativeTime(evidence.timestamp)}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-              </DescriptionList>
-            ) : (
-              <Alert
-                variant="info"
-                isInline
-                isPlain
-                title={t('No attestation evidence sidecar on this workload')}
-              >
-                <Content component="p">
-                  {t(
-                    'A confidential guest is sealed — the console cannot exec into it. Add the self-reporting evidence sidecar so the workload publishes a verifiable attestation record (the released secret) the console can read.',
-                  )}
+                <Content component="small" className={`${PREFIX}__muted ${PREFIX}__mt`}>
+                  {passed
+                    ? t(
+                        'This guest presented valid TEE evidence, Trustee verified it against the reference values, and the KBS released the sealed secret. That release is cryptographic proof of attestation.',
+                      )
+                    : t(
+                        'Attestation happens inside the sealed guest. Deploy the workload with the attestation evidence sidecar to publish a verifiable proof here — a successful secret release confirms the flow above completed.',
+                      )}
                 </Content>
-                <Link to="/confidential-containers/workloads/new">
-                  {t('Create a workload with the evidence sidecar')}
-                </Link>
-              </Alert>
-            )}
-          </CardBody>
-        </Card>
-      </FlexItem>
+              </CardBody>
+            </Card>
+          </FlexItem>
+
+          {/* Attestation evidence — the sidecar's self-report (no exec) */}
+          <FlexItem>
+            <Card isCompact>
+              <CardTitle>{t('Attestation evidence')}</CardTitle>
+              <CardBody>
+                {evidence ? (
+                  <DescriptionList isHorizontal isCompact>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>{t('Verdict')}</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        <Label color={reach.color} isCompact>
+                          {evidence.verdict}
+                        </Label>{' '}
+                        {evidence.source === 'sidecar' && (
+                          <Label color="blue" isCompact>
+                            {t('live · self-reported')}
+                          </Label>
+                        )}
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>{t('Secret released')}</DescriptionListTerm>
+                      <DescriptionListDescription className={`${PREFIX}__mono`}>
+                        {evidence.probe?.cdhPath ?? '—'}
+                        {evidence.probe?.httpStatus ? ` · HTTP ${evidence.probe.httpStatus}` : ''}
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>{t('Reported')}</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        {relativeTime(evidence.timestamp)}
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                  </DescriptionList>
+                ) : (
+                  <Alert
+                    variant="info"
+                    isInline
+                    isPlain
+                    title={t('No attestation evidence sidecar on this workload')}
+                  >
+                    <Content component="p">
+                      {t(
+                        'A confidential guest is sealed — the console cannot exec into it. Add the self-reporting evidence sidecar so the workload publishes a verifiable attestation record (the released secret) the console can read.',
+                      )}
+                    </Content>
+                    <Link to="/confidential-containers/workloads/new">
+                      {t('Create a workload with the evidence sidecar')}
+                    </Link>
+                  </Alert>
+                )}
+              </CardBody>
+            </Card>
+          </FlexItem>
+        </>
+      )}
     </Flex>
   );
 };

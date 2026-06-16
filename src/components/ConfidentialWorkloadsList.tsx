@@ -134,7 +134,10 @@ const SkeletonTable: FC = () => (
 
 const ConfidentialWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const { workloads, loaded } = useConfidentialWorkloads();
+  const { workloads: allWorkloads, loaded } = useConfidentialWorkloads();
+  // List Pods only — the confidential workload is the actual TEE guest (the Pod);
+  // a Deployment is just its controller, and its guest is the replica Pod shown here.
+  const workloads = useMemo(() => allWorkloads.filter((w) => w.kind === 'Pod'), [allWorkloads]);
 
   // Filters live in the URL so overview tiles and runtime-class links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -437,7 +440,7 @@ const ConfidentialWorkloadsList: FC = () => {
                 <Th>{t('Confidentiality')}</Th>
                 <Th>{t('Initdata')}</Th>
                 <Th sort={getSortParams(7)}>{t('Status')}</Th>
-                <Th>{t('Attestation')}</Th>
+                <Th>{t('Report')}</Th>
                 <Th>{t('Restarts')}</Th>
                 <Th>{t('Node')}</Th>
                 <Th sort={getSortParams(11)}>{t('Created')}</Th>
@@ -448,19 +451,26 @@ const ConfidentialWorkloadsList: FC = () => {
               {rows.map((w, rowIndex) => {
                 const ev = evidenceFor(w);
                 const verdict = evidenceVerdictLabel(ev);
+                // Only a workload that actually self-reports (has an evidence
+                // sidecar) can be expanded for detail.
+                const expandable = !!ev;
                 return (
                   <Fragment key={w.uid}>
                     <Tr>
-                      <Td
-                        expand={{
-                          rowIndex,
-                          isExpanded: isOpen(w.uid),
-                          onToggle: () => {
-                            toggle(w.uid);
-                          },
-                          expandId: `att-${w.uid}`,
-                        }}
-                      />
+                      {expandable ? (
+                        <Td
+                          expand={{
+                            rowIndex,
+                            isExpanded: isOpen(w.uid),
+                            onToggle: () => {
+                              toggle(w.uid);
+                            },
+                            expandId: `att-${w.uid}`,
+                          }}
+                        />
+                      ) : (
+                        <Td />
+                      )}
                       <Td dataLabel={t('Name')}>
                         <ResourceLink
                           groupVersionKind={w.kind === 'Pod' ? PodGVK : DeploymentGVK}
@@ -498,7 +508,7 @@ const ConfidentialWorkloadsList: FC = () => {
                           {w.ready ? `${w.status} (${w.ready})` : w.status}
                         </Label>
                       </Td>
-                      <Td dataLabel={t('Attestation')}>
+                      <Td dataLabel={t('Report')}>
                         <Label color={verdict.color} isCompact>
                           {verdict.text}
                         </Label>
@@ -524,14 +534,16 @@ const ConfidentialWorkloadsList: FC = () => {
                         <RowActions w={w} onDelete={setToDelete} />
                       </Td>
                     </Tr>
-                    <Tr isExpanded={isOpen(w.uid)}>
-                      <Td />
-                      <Td dataLabel={t('Attestation detail')} colSpan={12}>
-                        <ExpandableRowContent>
-                          <WorkloadAttestationDetail w={w} evidence={ev} />
-                        </ExpandableRowContent>
-                      </Td>
-                    </Tr>
+                    {expandable && (
+                      <Tr isExpanded={isOpen(w.uid)}>
+                        <Td />
+                        <Td dataLabel={t('Report detail')} colSpan={12}>
+                          <ExpandableRowContent>
+                            <WorkloadAttestationDetail w={w} evidence={ev} />
+                          </ExpandableRowContent>
+                        </Td>
+                      </Tr>
+                    )}
                   </Fragment>
                 );
               })}

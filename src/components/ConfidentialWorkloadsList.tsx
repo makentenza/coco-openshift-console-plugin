@@ -47,12 +47,7 @@ import {
 } from '../k8s/resources';
 import type { CcWorkload, ConfigMapKind } from '../k8s/types';
 import { statusCategory, statusColor } from '../utils/status';
-import {
-  EVIDENCE_LABEL,
-  evidenceCmName,
-  parseEvidence,
-  type EvidenceRecord,
-} from '../utils/evidence';
+import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
 import { WorkloadAttestationDetail } from './WorkloadAttestationDetail';
 import './coco.css';
@@ -195,16 +190,25 @@ const ConfidentialWorkloadsList: FC = () => {
     isList: true,
     selector: { matchLabels: { [EVIDENCE_LABEL]: 'true' } },
   });
-  const evidenceByKey = useMemo(() => {
-    const m = new Map<string, EvidenceRecord>();
+  const evidenceList = useMemo(() => {
+    const out: EvidenceRecord[] = [];
     for (const cm of evidenceCms ?? []) {
       const rec = parseEvidence(cm.data?.['evidence.json']);
-      if (rec) m.set(`${cm.metadata?.namespace ?? ''}/${cm.metadata?.name ?? ''}`, rec);
+      if (rec) out.push(rec);
     }
-    return m;
+    return out;
   }, [evidenceCms]);
+  // The sidecar names its ConfigMap by the reporting POD, so match on the in-guest
+  // identity it records: a Pod by exact name, a Deployment by its replica-pod name
+  // prefix; the newest report wins.
   const evidenceFor = (w: CcWorkload): EvidenceRecord | undefined =>
-    evidenceByKey.get(`${w.namespace}/${evidenceCmName(w.name)}`);
+    evidenceList
+      .filter(
+        (e) =>
+          e.workload?.namespace === w.namespace &&
+          (e.workload?.name === w.name || (e.workload?.name ?? '').startsWith(`${w.name}-`)),
+      )
+      .sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''))[0];
   const evidenceVerdictLabel = (
     ev?: EvidenceRecord,
   ): { color: 'green' | 'red' | 'orange' | 'grey'; text: string } =>

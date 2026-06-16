@@ -3,7 +3,6 @@ import { useMemo } from 'react';
 import {
   CC_INIT_DATA_ANNOTATION,
   ConfigMapGVK,
-  DeploymentGVK,
   KataConfigGVK,
   NodeGVK,
   OSC_FEATURE_GATES_CM,
@@ -15,7 +14,6 @@ import type {
   CcClass,
   CcWorkload,
   ConfigMapKind,
-  DeploymentKind,
   KataConfigKind,
   NodeKind,
   PodKind,
@@ -75,21 +73,16 @@ export const useTeeNodes = (): { teeNodes: TeeNode[]; loaded: boolean } => {
   }, [nodes, loaded]);
 };
 
-const deploymentReady = (d: DeploymentKind): string =>
-  `${d.status?.readyReplicas ?? 0}/${d.spec?.replicas ?? d.status?.replicas ?? 0}`;
-
 /**
- * Watch Pods + Deployments cluster-wide and reduce them to normalized
- * CcWorkload rows, keeping only those on a confidential (kata-cc) RuntimeClass.
+ * Watch Pods cluster-wide and reduce them to normalized CcWorkload rows, keeping
+ * only those on a confidential (kata-cc) RuntimeClass. A confidential workload is
+ * the actual TEE guest — the Pod; Deployments are just controllers and are not
+ * listed as workloads (a Deployment's guest is its replica Pod, shown here).
  */
 export const useConfidentialWorkloads = (): { workloads: CcWorkload[]; loaded: boolean } => {
   const [runtimeClasses, rcLoaded] = useRuntimeClasses();
   const [pods, podsLoaded] = useK8sWatchResource<PodKind[]>({
     groupVersionKind: PodGVK,
-    isList: true,
-  });
-  const [deployments, depLoaded] = useK8sWatchResource<DeploymentKind[]>({
-    groupVersionKind: DeploymentGVK,
     isList: true,
   });
 
@@ -106,25 +99,6 @@ export const useConfidentialWorkloads = (): { workloads: CcWorkload[]; loaded: b
   const workloads = useMemo<CcWorkload[]>(() => {
     if (!rcLoaded) return [];
     const rows: CcWorkload[] = [];
-
-    (deployments ?? []).forEach((d) => {
-      const rc = d.spec?.template?.spec?.runtimeClassName;
-      if (!rc || !(rc in confidentialRC)) return;
-      rows.push({
-        uid: d.metadata?.uid ?? `${d.metadata?.namespace}/${d.metadata?.name}`,
-        kind: 'Deployment',
-        name: d.metadata?.name ?? '',
-        namespace: d.metadata?.namespace ?? '',
-        runtimeClass: rc,
-        ccClass: confidentialRC[rc],
-        hasInitData: Boolean(d.spec?.template?.metadata?.annotations?.[CC_INIT_DATA_ANNOTATION]),
-        status:
-          (d.status?.readyReplicas ?? 0) >= (d.spec?.replicas ?? 1) ? 'Available' : 'Progressing',
-        ready: deploymentReady(d),
-        creationTimestamp: d.metadata?.creationTimestamp,
-        obj: d,
-      });
-    });
 
     (pods ?? []).forEach((p) => {
       const rc = p.spec?.runtimeClassName;
@@ -148,7 +122,7 @@ export const useConfidentialWorkloads = (): { workloads: CcWorkload[]; loaded: b
     return rows.sort((a, b) =>
       (b.creationTimestamp ?? '').localeCompare(a.creationTimestamp ?? ''),
     );
-  }, [pods, deployments, confidentialRC, rcLoaded]);
+  }, [pods, confidentialRC, rcLoaded]);
 
-  return { workloads, loaded: rcLoaded && podsLoaded && depLoaded };
+  return { workloads, loaded: rcLoaded && podsLoaded };
 };

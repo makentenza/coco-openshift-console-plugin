@@ -134,10 +134,7 @@ const SkeletonTable: FC = () => (
 
 const ConfidentialWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const { workloads: allWorkloads, loaded } = useConfidentialWorkloads();
-  // List Pods only — the confidential workload is the actual TEE guest (the Pod);
-  // a Deployment is just its controller, and its guest is the replica Pod shown here.
-  const workloads = useMemo(() => allWorkloads.filter((w) => w.kind === 'Pod'), [allWorkloads]);
+  const { workloads, loaded } = useConfidentialWorkloads();
 
   // Filters live in the URL so overview tiles and runtime-class links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();

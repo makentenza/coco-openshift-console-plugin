@@ -215,9 +215,9 @@ const buildManualScript = (base: string, node: string): string =>
     'oc set serviceaccount daemonset/tdx-qgs qgs-sa -n intel-dcap',
   ].join('\n');
 
-type Props = {
+interface Props {
   onClose: () => void;
-};
+}
 
 /**
  * Guided, automated setup of the Intel TDX remote attestation infrastructure
@@ -251,7 +251,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
     [nodes],
   );
   const tdxNodes = useMemo(
-    () => (nodes ?? []).filter((n) => (n.metadata?.labels ?? {})[TDX_LABEL] === 'true'),
+    () => (nodes ?? []).filter((n) => n.metadata?.labels?.[TDX_LABEL] === 'true'),
     [nodes],
   );
   const tdxNodeCount = tdxNodes.length;
@@ -432,11 +432,11 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
         },
       };
       try {
-        await k8sDelete({ model: JobModel, resource: jobResource as JobKind });
+        await k8sDelete({ model: JobModel, resource: jobResource });
       } catch (e) {
         if (!isNotFound(e)) throw e;
       }
-      await k8sCreate({ model: JobModel, data: jobResource as JobKind });
+      await k8sCreate({ model: JobModel, data: jobResource });
       setStarted(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

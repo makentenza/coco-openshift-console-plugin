@@ -72,7 +72,7 @@ export type NodeKind = K8sResourceCommon & {
   };
 };
 
-export type ContainerStatusKind = {
+export interface ContainerStatusKind {
   name: string;
   ready: boolean;
   restartCount: number;
@@ -82,7 +82,7 @@ export type ContainerStatusKind = {
     terminated?: { exitCode?: number; reason?: string; finishedAt?: string };
   };
   image?: string;
-};
+}
 
 /** Minimal Pod shape we rely on. */
 export type PodKind = K8sResourceCommon & {

@@ -30,7 +30,12 @@ const initdataAnnotation = (w: CcWorkload): string | undefined =>
     ? (w.obj as PodKind).metadata?.annotations?.[CC_INIT_DATA_ANNOTATION]
     : (w.obj as DeploymentKind).spec?.template?.metadata?.annotations?.[CC_INIT_DATA_ANNOTATION];
 
-type Decoded = { done: boolean; url?: string; host?: string; target?: 'local' | 'remote' };
+interface Decoded {
+  done: boolean;
+  url?: string;
+  host?: string;
+  target?: 'local' | 'remote';
+}
 
 const FLOW = [
   {

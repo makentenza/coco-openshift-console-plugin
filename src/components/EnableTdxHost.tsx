@@ -78,11 +78,22 @@ export const EnableTdxHost: FC = () => {
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
         {t('Enable Intel TDX host')}
       </Button>
       {open && (
-        <Modal isOpen variant="medium" onClose={() => setOpen(false)}>
+        <Modal
+          isOpen
+          variant="medium"
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
           <ModalHeader title={t('Enable Intel TDX host')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
@@ -150,7 +161,12 @@ export const EnableTdxHost: FC = () => {
             >
               {t('Enable and reboot')}
             </Button>
-            <Button variant="link" onClick={() => setOpen(false)}>
+            <Button
+              variant="link"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
               {t('Cancel')}
             </Button>
           </ModalFooter>

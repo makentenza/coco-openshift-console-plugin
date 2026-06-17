@@ -248,7 +248,7 @@ const CreateConfidentialWorkload: FC = () => {
         apiVersion: 'v1',
         kind: 'ServiceAccount',
         metadata: { name: rbacName, namespace: nsTrimmed },
-      } as K8sResourceCommon,
+      },
       {
         apiVersion: 'rbac.authorization.k8s.io/v1',
         kind: 'Role',
@@ -409,7 +409,7 @@ const CreateConfidentialWorkload: FC = () => {
             apiVersion: 'v1',
             kind: 'Namespace',
             metadata: { name: nsTrimmed },
-          } as K8sResourceCommon,
+          },
         });
       }
       // 2) Provision RBAC for the evidence sidecar before the workload that uses
@@ -442,7 +442,7 @@ const CreateConfidentialWorkload: FC = () => {
         model: kind === 'Pod' ? PodModel : DeploymentModel,
         data: buildManifest(trimmedInitdata),
       });
-      navigate('/confidential-containers/workloads');
+      void navigate('/confidential-containers/workloads');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -885,7 +885,7 @@ const CreateConfidentialWorkload: FC = () => {
                     <Button
                       variant="link"
                       onClick={() => {
-                        navigate('/confidential-containers/workloads');
+                        void navigate('/confidential-containers/workloads');
                       }}
                     >
                       {t('Cancel')}

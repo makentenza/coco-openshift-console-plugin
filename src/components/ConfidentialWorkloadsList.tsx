@@ -175,13 +175,14 @@ const ConfidentialWorkloadsList: FC = () => {
   // Expandable per-workload attestation detail.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const isOpen = (uid: string) => expanded.has(uid);
-  const toggle = (uid: string) =>
+  const toggle = (uid: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(uid)) next.delete(uid);
       else next.add(uid);
       return next;
     });
+  };
 
   // Self-reported attestation evidence: ConfigMaps the in-guest sidecar publishes
   // (no exec). Keyed by namespace/<configmap-name> so each workload finds its own.
@@ -243,9 +244,9 @@ const ConfidentialWorkloadsList: FC = () => {
     if (sortBy.index === undefined) return filtered;
     const field = SORTABLE_FIELDS[sortBy.index];
     if (!field) return filtered;
-    const sorted = [...filtered].sort((a, b) =>
-      String(a[field] ?? '').localeCompare(String(b[field] ?? '')),
-    );
+    const cell = (v: unknown): string =>
+      typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+    const sorted = [...filtered].sort((a, b) => cell(a[field]).localeCompare(cell(b[field])));
     return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
   }, [workloads, text, ccFilter, nsFilter, statusFilter, rcFilter, sortBy]);
 

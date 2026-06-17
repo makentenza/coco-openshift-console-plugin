@@ -32,10 +32,10 @@ const isAlreadyExists = (e: unknown): boolean =>
 
 type EndpointsKind = K8sResourceCommon & { subsets?: { addresses?: { ip?: string }[] }[] };
 
-type Props = {
+interface Props {
   /** True once the node advertises sgx.intel.com/enclave + /provision (plugin live). */
   ready: boolean;
-};
+}
 
 /**
  * One-click install of the Intel SGX device plugin — the prerequisite that lets the

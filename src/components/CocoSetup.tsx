@@ -276,7 +276,9 @@ const CocoSetup: FC = () => {
             <FlexItem>
               <Button
                 variant={attestReady ? 'secondary' : 'primary'}
-                onClick={() => setTdxSetupOpen(true)}
+                onClick={() => {
+                  setTdxSetupOpen(true);
+                }}
               >
                 {attestReady ? t('Reconfigure TDX attestation') : t('Set up Intel TDX attestation')}
               </Button>
@@ -369,7 +371,13 @@ const CocoSetup: FC = () => {
           </CardBody>
         </Card>
       </PageSection>
-      {tdxSetupOpen && <DeployTdxAttestationModal onClose={() => setTdxSetupOpen(false)} />}
+      {tdxSetupOpen && (
+        <DeployTdxAttestationModal
+          onClose={() => {
+            setTdxSetupOpen(false);
+          }}
+        />
+      )}
     </>
   );
 };

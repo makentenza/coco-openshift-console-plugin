@@ -128,7 +128,9 @@ export const EnableConfidentialContainers: FC = () => {
   const copySnippet = () => {
     void navigator.clipboard?.writeText(snippet);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => {
+      setCopied(false);
+    }, 1500);
   };
 
   const onEnable = async () => {
@@ -138,7 +140,7 @@ export const EnableConfidentialContainers: FC = () => {
       if (cmExists) {
         await k8sPatch({
           model: ConfigMapModel,
-          resource: cm as K8sResourceCommon,
+          resource: cm,
           data: [
             { op: 'add', path: '/data', value: { ...(cm?.data ?? {}), confidential: 'true' } },
           ],
@@ -164,11 +166,23 @@ export const EnableConfidentialContainers: FC = () => {
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)} isDisabled={!loaded}>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setOpen(true);
+        }}
+        isDisabled={!loaded}
+      >
         {t('Enable confidential containers')}
       </Button>
       {open && (
-        <Modal isOpen variant="medium" onClose={() => setOpen(false)}>
+        <Modal
+          isOpen
+          variant="medium"
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
           <ModalHeader title={t('Enable confidential containers')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
@@ -221,7 +235,9 @@ export const EnableConfidentialContainers: FC = () => {
                     key={n.name}
                     id={`coco-node-${n.name}`}
                     isChecked={sel.has(n.name)}
-                    onChange={() => toggleNode(n.name)}
+                    onChange={() => {
+                      toggleNode(n.name);
+                    }}
                     label={
                       <>
                         <span className="coco-openshift-console-plugin__mono">{n.name}</span>{' '}
@@ -288,7 +304,12 @@ export const EnableConfidentialContainers: FC = () => {
             >
               {t('Enable and reboot')}
             </Button>
-            <Button variant="link" onClick={() => setOpen(false)}>
+            <Button
+              variant="link"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
               {t('Cancel')}
             </Button>
           </ModalFooter>

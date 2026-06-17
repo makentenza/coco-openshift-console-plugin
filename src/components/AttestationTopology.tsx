@@ -127,7 +127,7 @@ const AttestationTopology: FC = () => {
       <g
         key={`node-${node.name || 'unscheduled'}`}
         className={clickable ? `${PREFIX}__topo-clickable` : undefined}
-        onClick={clickable ? () => navigate(`/k8s/cluster/nodes/${node.name}`) : undefined}
+        onClick={clickable ? () => void navigate(`/k8s/cluster/nodes/${node.name}`) : undefined}
         role={clickable ? 'button' : undefined}
       >
         <rect
@@ -201,7 +201,7 @@ const AttestationTopology: FC = () => {
       <g
         key={wl.uid}
         className={`${PREFIX}__topo-clickable`}
-        onClick={() => navigate(`/k8s/ns/${wl.namespace}/pods/${wl.name}`)}
+        onClick={() => void navigate(`/k8s/ns/${wl.namespace}/pods/${wl.name}`)}
         role="button"
       >
         <rect

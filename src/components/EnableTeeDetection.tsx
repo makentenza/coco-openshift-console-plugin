@@ -104,11 +104,22 @@ export const EnableTeeDetection: FC = () => {
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
         {t('Enable TEE detection')}
       </Button>
       {open && (
-        <Modal isOpen variant="medium" onClose={() => setOpen(false)}>
+        <Modal
+          isOpen
+          variant="medium"
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
           <ModalHeader title={t('Enable TEE detection')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
@@ -189,7 +200,12 @@ export const EnableTeeDetection: FC = () => {
             >
               {t('Enable')}
             </Button>
-            <Button variant="link" onClick={() => setOpen(false)}>
+            <Button
+              variant="link"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
               {t('Cancel')}
             </Button>
           </ModalFooter>

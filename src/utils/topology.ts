@@ -109,7 +109,7 @@ export const decodeInitdataKbsUrl = async (annotation: string): Promise<string |
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
     const toml = await new Response(stream).text();
-    const m = toml.match(/url\s*=\s*['"]([^'"]+)['"]/);
+    const m = /url\s*=\s*['"]([^'"]+)['"]/.exec(toml);
     return m ? m[1].trim() : null;
   } catch {
     return null;

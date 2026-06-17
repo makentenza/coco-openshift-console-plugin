@@ -42,11 +42,22 @@ export const EnableKataConfig: FC = () => {
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
         {t('Create KataConfig')}
       </Button>
       {open && (
-        <Modal isOpen variant="medium" onClose={() => setOpen(false)}>
+        <Modal
+          isOpen
+          variant="medium"
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
           <ModalHeader title={t('Create KataConfig')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
@@ -89,7 +100,12 @@ export const EnableKataConfig: FC = () => {
             >
               {t('Create and reboot')}
             </Button>
-            <Button variant="link" onClick={() => setOpen(false)}>
+            <Button
+              variant="link"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
               {t('Cancel')}
             </Button>
           </ModalFooter>

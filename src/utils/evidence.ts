@@ -24,7 +24,12 @@ const sanitizeName = (raw: string): string =>
 export const evidenceCmName = (name: string): string =>
   `attestation-evidence-${sanitizeName(name)}`.slice(0, 253).replace(/-+$/g, '');
 
-export type EvidenceVerdict = 'passed' | 'failed' | 'inconclusive' | string;
+/**
+ * Verdict the sidecar writes. Known values: 'passed' | 'failed' | 'inconclusive';
+ * any other string is tolerated and rendered as inconclusive. (The literal union
+ * collapses to `string`, so this is typed as `string` to keep the linter happy.)
+ */
+export type EvidenceVerdict = string;
 
 /** The trustee.attestation.evidence/v1 record the sidecar publishes. */
 export interface EvidenceRecord {

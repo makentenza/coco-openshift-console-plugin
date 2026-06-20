@@ -76,6 +76,7 @@
       "ConfidentialContainersOverview": "./components/ConfidentialContainersOverview",
       "CocoSetup": "./components/CocoSetup",
       "ConfidentialWorkloadsList": "./components/ConfidentialWorkloadsList",
+      "ConfidentialWorkloadDetail": "./components/ConfidentialWorkloadDetail",
       "TeeNodesList": "./components/TeeNodesList",
       "RuntimeClassesList": "./components/RuntimeClassesList",
       "CreateConfidentialWorkload": "./components/CreateConfidentialWorkload",

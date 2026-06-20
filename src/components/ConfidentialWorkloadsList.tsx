@@ -34,7 +34,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useConfidentialWorkloads } from '../k8s/hooks';
 import { ConfigMapGVK, DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';

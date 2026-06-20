@@ -24,7 +24,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses } from '../k8s/hooks';
 import {

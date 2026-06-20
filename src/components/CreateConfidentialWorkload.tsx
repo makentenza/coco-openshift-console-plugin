@@ -44,7 +44,7 @@ import {
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import type { FC, Ref } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import {
   CC_INIT_DATA_ANNOTATION,

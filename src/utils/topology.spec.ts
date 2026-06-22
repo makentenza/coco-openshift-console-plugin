@@ -1,6 +1,8 @@
 import {
   classifyInitdataToml,
   classifyKbsUrl,
+  cvmPeerPodsEnabled,
+  isConfidentialRuntimeName,
   isInClusterKbsHost,
   kbsHostFromUrl,
 } from './topology';
@@ -104,5 +106,46 @@ describe('classifyInitdataToml', () => {
       scheme: null,
       hasCert: false,
     });
+  });
+});
+
+describe('isConfidentialRuntimeName', () => {
+  it('treats the kata-cc family as confidential', () => {
+    expect(isConfidentialRuntimeName('kata-cc')).toBe(true);
+    expect(isConfidentialRuntimeName('kata-cc-nvidia-gpu')).toBe(true);
+  });
+
+  it('does NOT treat kata-remote as confidential by default', () => {
+    expect(isConfidentialRuntimeName('kata-remote')).toBe(false);
+  });
+
+  it('treats kata-remote as confidential only when CVM peer-pods are enabled', () => {
+    expect(isConfidentialRuntimeName('kata-remote', true)).toBe(true);
+    expect(isConfidentialRuntimeName('kata-remote', false)).toBe(false);
+  });
+
+  it('never treats non-confidential runtimes or undefined as confidential', () => {
+    expect(isConfidentialRuntimeName('sandbox', true)).toBe(false);
+    expect(isConfidentialRuntimeName('runc', true)).toBe(false);
+    expect(isConfidentialRuntimeName(undefined, true)).toBe(false);
+  });
+});
+
+describe('cvmPeerPodsEnabled', () => {
+  it('is true when a cloud provider is set and CVMs are not disabled', () => {
+    expect(cvmPeerPodsEnabled({ CLOUD_PROVIDER: 'azure' })).toBe(true);
+  });
+
+  it('is false when CVMs are explicitly disabled', () => {
+    expect(cvmPeerPodsEnabled({ CLOUD_PROVIDER: 'azure', DISABLECVM: 'true' })).toBe(false);
+  });
+
+  it('is false without a cloud provider, even if DISABLECVM is not "true"', () => {
+    expect(cvmPeerPodsEnabled({ DISABLECVM: 'false' })).toBe(false);
+  });
+
+  it('is false for empty or missing data', () => {
+    expect(cvmPeerPodsEnabled({})).toBe(false);
+    expect(cvmPeerPodsEnabled(undefined)).toBe(false);
   });
 });

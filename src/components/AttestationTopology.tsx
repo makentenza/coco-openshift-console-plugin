@@ -10,15 +10,19 @@ import {
 import { Alert, Bullseye, Content, PageSection, Spinner } from '@patternfly/react-core';
 import {
   CC_INIT_DATA_ANNOTATION,
+  ConfigMapGVK,
   InfrastructureGVK,
   KBS_SERVICE_NAME,
   NodeGVK,
+  OSC_NAMESPACE,
+  PEER_PODS_CM,
   PodGVK,
 } from '../k8s/resources';
-import type { InfrastructureKind, NodeKind, PodKind } from '../k8s/types';
+import type { ConfigMapKind, InfrastructureKind, NodeKind, PodKind } from '../k8s/types';
 import {
   buildTopoCluster,
   classifyKbsUrl,
+  cvmPeerPodsEnabled,
   decodeInitdataKbsUrl,
   isConfidentialRuntimeName,
   layoutTopology,
@@ -59,6 +63,14 @@ const AttestationTopology: FC = () => {
     groupVersionKind: InfrastructureGVK,
     isList: true,
   });
+  // CVM peer-pods (kata-remote on a confidential-VM instance) belong in the
+  // confidential topology only when peer-pods-cm says so; a plain peer-pod does not.
+  const [peerPodsCm] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
+  const cvmPeerPods = cvmPeerPodsEnabled(peerPodsCm?.data);
 
   // Decode each confidential pod's initdata KBS URL so the topology shows which
   // Trustee each workload ACTUALLY attests to (an in-cluster one vs a remote hub)
@@ -70,7 +82,7 @@ const AttestationTopology: FC = () => {
     void (async () => {
       const next = new Map<string, AttestInfo>();
       for (const p of pods ?? []) {
-        if (!isConfidentialRuntimeName(p.spec?.runtimeClassName)) continue;
+        if (!isConfidentialRuntimeName(p.spec?.runtimeClassName, cvmPeerPods)) continue;
         const ann = p.metadata?.annotations?.[CC_INIT_DATA_ANNOTATION];
         if (!ann) continue;
         const uid = p.metadata?.uid ?? `${p.metadata?.namespace ?? ''}/${p.metadata?.name ?? ''}`;
@@ -82,7 +94,7 @@ const AttestationTopology: FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [pods]);
+  }, [pods, cvmPeerPods]);
 
   // The Trustee hub is derived from the distinct KBS endpoints the workloads
   // attest to (decoded from their initdata) — CoCo never deploys Trustee itself.
@@ -113,8 +125,11 @@ const AttestationTopology: FC = () => {
       : endpoints.map((e) => `${e.host} (${e.target})`).join('\n');
 
   const layout = useMemo(
-    () => layoutTopology(buildTopoCluster(pods ?? [], nodes ?? [], infra ?? [], attestByUid)),
-    [pods, nodes, infra, attestByUid],
+    () =>
+      layoutTopology(
+        buildTopoCluster(pods ?? [], nodes ?? [], infra ?? [], attestByUid, cvmPeerPods),
+      ),
+    [pods, nodes, infra, attestByUid, cvmPeerPods],
   );
 
   const loading = !podsLoaded || !nodesLoaded;

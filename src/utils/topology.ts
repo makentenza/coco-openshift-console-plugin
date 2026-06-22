@@ -58,9 +58,30 @@ export interface TopoCluster {
 
 // ---- classification helpers ----
 
-/** A confidential-containers pod runs on the kata-cc family of runtime classes. */
-export const isConfidentialRuntimeName = (name?: string): boolean =>
-  !!name && name.startsWith('kata-cc');
+/**
+ * A confidential-containers pod runs on the kata-cc family of runtime classes,
+ * or — only when peer-pods on this cluster are Confidential VMs — kata-remote.
+ */
+export const isConfidentialRuntimeName = (name?: string, cvmPeerPods = false): boolean =>
+  !!name && (name.startsWith('kata-cc') || (cvmPeerPods && name === 'kata-remote'));
+
+/**
+ * Peer-pods on this cluster run as Confidential VMs — kata-remote backed by a
+ * confidential-VM instance type. True only when peer-pods are configured
+ * (peer-pods-cm has CLOUD_PROVIDER) AND CVMs are not disabled (DISABLECVM !== 'true').
+ * Only then may kata-remote workloads appear in the confidential views; a plain
+ * non-CVM peer-pod is not confidential.
+ *
+ * Product context (2026-06): confidential-mode peer-pods are supported on Azure
+ * only today, and a cluster cannot currently run kata-remote for both confidential
+ * and non-confidential peer-pods at the same time — it is cluster-wide CVM or
+ * non-CVM. That is why this gate is cluster-level (peer-pods-cm) rather than
+ * per-pod, and why it keys on DISABLECVM rather than the provider — both
+ * limitations are expected to change in future, and DISABLECVM stays correct when
+ * they do.
+ */
+export const cvmPeerPodsEnabled = (peerPodsCmData?: Record<string, string>): boolean =>
+  Boolean(peerPodsCmData?.CLOUD_PROVIDER) && peerPodsCmData?.DISABLECVM !== 'true';
 
 /** TEE type from NFD node labels (tolerates a missing/undecoded node). */
 const teeTypeForNode = (node?: NodeKind): TeeType => {
@@ -213,6 +234,7 @@ export const buildTopoCluster = (
   nodes: NodeKind[],
   infra: InfrastructureKind[],
   attestByUid: Map<string, AttestInfo> = new Map(),
+  cvmPeerPods = false,
 ): TopoCluster => {
   const clusterName =
     infra.find((i) => i.metadata?.name === 'cluster')?.status?.infrastructureName ?? 'This cluster';
@@ -223,7 +245,9 @@ export const buildTopoCluster = (
     if (nm) nodeByName.set(nm, n);
   });
 
-  const confidential = pods.filter((p) => isConfidentialRuntimeName(p.spec?.runtimeClassName));
+  const confidential = pods.filter((p) =>
+    isConfidentialRuntimeName(p.spec?.runtimeClassName, cvmPeerPods),
+  );
 
   const byNode = new Map<string, TopoWorkload[]>();
   confidential.forEach((p) => {

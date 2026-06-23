@@ -279,6 +279,7 @@ export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
  * not "feature gates" — confidential containers is a supported (GA) option.
  */
 export const OSC_FEATURE_GATES_CM = 'osc-feature-gates';
+export const PEER_PODS_CM = 'peer-pods-cm';
 export const KATACONFIG_NAME = 'example-kataconfig';
 /** Pod annotation carrying the gzip+base64 initdata for a confidential pod. */
 export const CC_INIT_DATA_ANNOTATION = 'io.katacontainers.config.hypervisor.cc_init_data';

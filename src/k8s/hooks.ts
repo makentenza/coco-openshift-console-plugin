@@ -7,6 +7,7 @@ import {
   NodeGVK,
   OSC_FEATURE_GATES_CM,
   OSC_NAMESPACE,
+  PEER_PODS_CM,
   PodGVK,
   RuntimeClassGVK,
 } from './resources';
@@ -21,6 +22,7 @@ import type {
   TeeNode,
 } from './types';
 import { classForRuntimeClass, isConfidentialClass } from '../utils/runtime';
+import { cvmPeerPodsEnabled } from '../utils/topology';
 import { teeNode } from '../utils/tee';
 import { podDisplayStatus, podRestartCount } from '../utils/status';
 
@@ -41,19 +43,30 @@ export const useKataConfig = (): [KataConfigKind | undefined, boolean] => {
   return [data?.[0], loaded];
 };
 
-/** Is confidential containers enabled (osc-feature-gates ConfigMap, confidential: "true")? */
+/**
+ * Is confidential containers enabled? True when the osc-feature-gates ConfigMap
+ * has confidential: "true" (kata-cc), OR when peer-pods on this cluster run as
+ * Confidential VMs (peer-pods-cm has CLOUD_PROVIDER and DISABLECVM !== "true").
+ */
 export const useConfidentialEnabled = (): [boolean | undefined, boolean] => {
   const [cm, loaded, loadError] = useK8sWatchResource<ConfigMapKind>({
     groupVersionKind: ConfigMapGVK,
     namespace: OSC_NAMESPACE,
     name: OSC_FEATURE_GATES_CM,
   });
+  const [ppCm, ppLoaded, ppError] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
   // A named resource that doesn't exist yet 404s: loadError is set but `loaded`
-  // never flips true. Treat the watch as settled once it is loaded OR errored, so
+  // never flips true. Treat each watch as settled once it is loaded OR errored, so
   // consumers that gate on the loaded flag don't show a spinner forever when the
-  // osc-feature-gates ConfigMap is absent (it just reads as "not enabled").
-  const settled = loaded || Boolean(loadError);
-  return [settled ? cm?.data?.confidential === 'true' : undefined, settled];
+  // ConfigMap is absent (it just reads as "not enabled").
+  const settled = (loaded || Boolean(loadError)) && (ppLoaded || Boolean(ppError));
+  const hasKataCc = cm?.data?.confidential === 'true';
+  const hasCvmPeerPods = cvmPeerPodsEnabled(ppCm?.data);
+  return [settled ? hasKataCc || hasCvmPeerPods : undefined, settled];
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {
@@ -85,16 +98,22 @@ export const useConfidentialWorkloads = (): { workloads: CcWorkload[]; loaded: b
     groupVersionKind: PodGVK,
     isList: true,
   });
+  const [peerPodsCm] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
+  const cvmPeerPods = cvmPeerPodsEnabled(peerPodsCm?.data);
 
   const confidentialRC = useMemo(() => {
     const map: Record<string, CcClass> = {};
     runtimeClasses.forEach((rc) => {
       const cc = classForRuntimeClass(rc);
       const name = rc.metadata?.name;
-      if (name && isConfidentialClass(cc)) map[name] = cc;
+      if (name && (isConfidentialClass(cc) || (cvmPeerPods && cc === 'peerpod'))) map[name] = cc;
     });
     return map;
-  }, [runtimeClasses]);
+  }, [runtimeClasses, cvmPeerPods]);
 
   const workloads = useMemo<CcWorkload[]>(() => {
     if (!rcLoaded) return [];

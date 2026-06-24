@@ -37,3 +37,57 @@ export const buildTdxHostMachineConfig = (role: string): K8sResourceCommon =>
       kernelArguments: [...TDX_HOST_KERNEL_ARGS],
     },
   }) as K8sResourceCommon;
+
+// ---------------------------------------------------------------------------
+// Targeted TDX-host enablement (a chosen subset of nodes, not the whole pool).
+//
+// Applying the TDX MachineConfig to the "worker" pool reboots every worker. To
+// limit the blast radius to the nodes the user picks, we create a custom
+// MachineConfigPool ("tdx-host") that selects (a) base "worker" MachineConfigs
+// plus the "tdx-host" one and (b) only nodes carrying the
+// `node-role.kubernetes.io/tdx-host` label. Labeling a node moves it from the
+// worker pool into this pool, so only the selected nodes render the TDX config
+// and reboot — once.
+// ---------------------------------------------------------------------------
+
+/** Role of the custom pool that holds the user-selected TDX hosts. */
+export const TDX_HOST_POOL_ROLE = 'tdx-host';
+/** Node-role label that places a node into the custom TDX-host pool. */
+export const TDX_HOST_NODE_ROLE_LABEL = `node-role.kubernetes.io/${TDX_HOST_POOL_ROLE}`;
+
+/**
+ * Custom MachineConfigPool holding only the selected TDX hosts. It inherits the
+ * base worker config (so the nodes stay normal workers) and adds the tdx-host
+ * MachineConfig; its nodeSelector matches the tdx-host node-role label.
+ */
+export const buildTdxHostMachineConfigPool = (): K8sResourceCommon =>
+  ({
+    apiVersion: 'machineconfiguration.openshift.io/v1',
+    kind: 'MachineConfigPool',
+    metadata: { name: TDX_HOST_POOL_ROLE },
+    spec: {
+      machineConfigSelector: {
+        matchExpressions: [
+          {
+            key: 'machineconfiguration.openshift.io/role',
+            operator: 'In',
+            values: ['worker', TDX_HOST_POOL_ROLE],
+          },
+        ],
+      },
+      nodeSelector: {
+        matchLabels: { [TDX_HOST_NODE_ROLE_LABEL]: '' },
+      },
+    },
+  }) as K8sResourceCommon;
+
+/**
+ * JSON Patch (RFC 6902) that adds the tdx-host node-role label to a node, moving
+ * it into the custom pool. The label key's '/' is escaped per RFC 6901 ('~' →
+ * '~0', '/' → '~1'). Real nodes always have a `metadata.labels` object, so a
+ * single `add` on the escaped key creates or replaces just that label.
+ */
+export const tdxHostNodeLabelPatch = (): { op: 'add'; path: string; value: string }[] => {
+  const escaped = TDX_HOST_NODE_ROLE_LABEL.replace(/~/g, '~0').replace(/\//g, '~1');
+  return [{ op: 'add', path: `/metadata/labels/${escaped}`, value: '' }];
+};

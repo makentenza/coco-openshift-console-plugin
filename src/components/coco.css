@@ -271,3 +271,16 @@
   background-color: var(--pf-t--global--icon--color--status--success--default);
   color: var(--pf-t--global--background--color--primary--default);
 }
+
+/* ---- scrollable node-selection list (TDX host enablement) ---- */
+.coco-openshift-console-plugin__nodelist {
+  max-block-size: 16rem;
+  overflow-y: auto;
+  padding: var(--pf-t--global--spacer--sm, 0.5rem);
+  border: var(--pf-t--global--border--width--regular) solid var(--pf-t--global--border--color--default);
+  border-radius: var(--pf-t--global--border--radius--small, 3px);
+}
+
+.coco-openshift-console-plugin__nodelist-row {
+  padding-block: var(--pf-t--global--spacer--xs, 0.25rem);
+}

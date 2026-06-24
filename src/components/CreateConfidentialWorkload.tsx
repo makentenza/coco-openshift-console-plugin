@@ -145,7 +145,10 @@ const CreateConfidentialWorkload: FC = () => {
   const [image, setImage] = useState('registry.access.redhat.com/ubi9/ubi:latest');
   const [runtimeClass, setRuntimeClass] = useState<RuntimeClass>('kata-cc');
   const [replicas, setReplicas] = useState('1');
-  const [command, setCommand] = useState('sleep infinity');
+  // Optional — left empty so the container runs the image's own entrypoint unless the
+  // user deliberately overrides it. (Note: many base images, e.g. ubi9, exit immediately
+  // without a long-running command such as `sleep infinity`.)
+  const [command, setCommand] = useState('');
   const [initdata, setInitdata] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -755,10 +758,20 @@ const CreateConfidentialWorkload: FC = () => {
                 <TextInput
                   id="cw-command"
                   value={command}
+                  placeholder={t('e.g. sleep infinity')}
                   onChange={(_e, v) => {
                     setCommand(v);
                   }}
                 />
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      {t(
+                        'Optional. Overrides the image’s entrypoint. Leave empty to use the image default — note some base images (e.g. ubi9) exit immediately without a long-running command like sleep infinity.',
+                      )}
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
               </FormGroup>
             </Form>
           </WizardStep>

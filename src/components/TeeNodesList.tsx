@@ -20,6 +20,7 @@ import { NodeGVK } from '../k8s/resources';
 import { teeLabel } from '../utils/tee';
 import { EnableTdxHost } from './EnableTdxHost';
 import { EnableTeeDetection } from './EnableTeeDetection';
+import { KataNodesPanel } from './KataNodesPanel';
 import './coco.css';
 
 const TeeNodesList: FC = () => {
@@ -112,6 +113,8 @@ const TeeNodesList: FC = () => {
             </Tbody>
           </Table>
         )}
+
+        <KataNodesPanel />
 
         <Card className="coco-openshift-console-plugin__mt">
           <CardTitle>{t('About TEE detection')}</CardTitle>

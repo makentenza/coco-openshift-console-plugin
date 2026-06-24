@@ -1,6 +1,5 @@
 import {
   k8sCreate,
-  k8sPatch,
   useK8sWatchResource,
   type K8sResourceCommon,
 } from '@openshift-console/dynamic-plugin-sdk';
@@ -30,19 +29,15 @@ import {
   MachineConfigGVK,
   MachineConfigModel,
   MachineConfigPoolGVK,
-  MachineConfigPoolModel,
   NodeGVK,
-  NodeModel,
 } from '../k8s/resources';
 import type { MachineConfigPoolKind, NodeKind } from '../k8s/types';
 import {
   buildTdxHostMachineConfig,
-  buildTdxHostMachineConfigPool,
   hasTdxHostArgs,
+  poolRoleForNode,
+  rolesForNodes,
   TDX_HOST_KERNEL_ARGS,
-  TDX_HOST_NODE_ROLE_LABEL,
-  TDX_HOST_POOL_ROLE,
-  tdxHostNodeLabelPatch,
 } from '../utils/machineConfig';
 import { findPoolForRole, mcpRolloutState } from '../utils/machineConfigPool';
 import './coco.css';
@@ -72,11 +67,14 @@ const isReady = (node: NodeKind): boolean =>
  * One-click Intel TDX host activation. TDX must be turned on in the host kernel
  * (`nohibernate` + `kvm_intel.tdx=1`) before Node Feature Discovery can detect it.
  *
- * Two scopes (issue #5 — the old version always rebooted every worker):
- *  - **Specific nodes** (default): creates a custom `tdx-host` MachineConfigPool and
- *    labels only the selected nodes into it, so only those nodes reboot.
- *  - **Whole pool**: applies the MachineConfig to an existing pool by role (e.g.
- *    `worker`, or `master` on a compact cluster) — every node in that pool reboots.
+ * Kernel arguments are applied per MachineConfigPool. Two scopes:
+ *  - **Specific nodes** (default): applies the TDX MachineConfig to the role of the
+ *    pool each selected node already belongs to (e.g. `kata-oc`). This avoids
+ *    creating a second custom pool for an already-custom-pooled node, which the MCO
+ *    refuses ("belongs to 2 custom roles") — the bug behind issue #5's first cut.
+ *  - **Whole pool**: applies to an existing pool by role (e.g. `worker`, or `master`
+ *    on a compact cluster).
+ * Either way, every node in an affected pool reboots, one at a time.
  */
 export const EnableTdxHost: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
@@ -100,8 +98,7 @@ export const EnableTdxHost: FC = () => {
     isList: true,
   });
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
-  // Only true workers are selectable: the custom pool inherits the *worker* base
-  // config, so moving a control-plane node into it would strip its master config.
+  // Workers are the TDX-host candidates (control-plane nodes are excluded).
   const selectableNodes = (nodes ?? [])
     .filter((n) => {
       const roles = nodeRoles(n);
@@ -139,49 +136,28 @@ export const EnableTdxHost: FC = () => {
   };
 
   const nodesMode = scope === 'nodes';
-  const selectedNames = selectableNodes
-    .map((n) => n.metadata?.name ?? '')
-    .filter((n) => selected.has(n));
+  const selectedNodeObjs = selectableNodes.filter((n) => selected.has(n.metadata?.name ?? ''));
+  // The distinct pool roles the selected nodes belong to — what TDX is applied to.
+  const selectedRoles = rolesForNodes(selectedNodeObjs, pools ?? []);
 
-  // Preview of what gets created/changed, matching what onCreate applies.
+  // Preview of the MachineConfig(s) that get created, matching what onCreate applies.
   const toCreate = nodesMode
-    ? [buildTdxHostMachineConfigPool(), buildTdxHostMachineConfig(TDX_HOST_POOL_ROLE)]
+    ? selectedRoles.map((r) => buildTdxHostMachineConfig(r))
     : [buildTdxHostMachineConfig(role)];
 
   const onCreate = async () => {
     setBusy(true);
     setError(undefined);
     try {
-      if (nodesMode) {
-        // 1) Custom pool + 2) its TDX MachineConfig (both before labeling, so each
-        //    selected node renders the full config and reboots only once). 3) Label
-        //    the selected nodes into the pool. Each step tolerates AlreadyExists so a
-        //    re-run only adds newly-selected nodes.
+      // Create one TDX MachineConfig per affected pool role (idempotent — a re-run
+      // with the same roles tolerates AlreadyExists).
+      const roles = nodesMode ? selectedRoles : [role];
+      for (const r of roles) {
         try {
-          await k8sCreate({
-            model: MachineConfigPoolModel,
-            data: buildTdxHostMachineConfigPool(),
-          });
+          await k8sCreate({ model: MachineConfigModel, data: buildTdxHostMachineConfig(r) });
         } catch (e) {
           if (!isAlreadyExists(e)) throw e;
         }
-        try {
-          await k8sCreate({
-            model: MachineConfigModel,
-            data: buildTdxHostMachineConfig(TDX_HOST_POOL_ROLE),
-          });
-        } catch (e) {
-          if (!isAlreadyExists(e)) throw e;
-        }
-        for (const name of selectedNames) {
-          await k8sPatch({
-            model: NodeModel,
-            resource: { metadata: { name } },
-            data: tdxHostNodeLabelPatch(),
-          });
-        }
-      } else {
-        await k8sCreate({ model: MachineConfigModel, data: buildTdxHostMachineConfig(role) });
       }
       setOpen(false);
     } catch (e) {
@@ -221,7 +197,7 @@ export const EnableTdxHost: FC = () => {
     );
   }
 
-  const applyDisabled = busy || (nodesMode ? selectedNames.length === 0 : role.trim() === '');
+  const applyDisabled = busy || (nodesMode ? selectedRoles.length === 0 : role.trim() === '');
 
   return (
     <>
@@ -244,7 +220,7 @@ export const EnableTdxHost: FC = () => {
                   name="tdx-scope"
                   label={t('Specific nodes')}
                   description={t(
-                    'Create a dedicated tdx-host MachineConfigPool and move only the nodes you pick into it — only those nodes reboot.',
+                    'Pick nodes; the TDX kernel arguments are applied to the MachineConfigPool each node belongs to (e.g. kata-oc). Every node in those pools reboots.',
                   )}
                   isChecked={nodesMode}
                   onChange={() => {
@@ -254,9 +230,9 @@ export const EnableTdxHost: FC = () => {
                 <Radio
                   id="tdx-scope-pool"
                   name="tdx-scope"
-                  label={t('All nodes in a MachineConfigPool')}
+                  label={t('A MachineConfigPool by role')}
                   description={t(
-                    'Apply to an existing pool by role (e.g. worker, or master on a compact cluster). Every node in that pool reboots.',
+                    'Apply to a pool by role (e.g. worker, kata-oc, or master on a compact cluster). Every node in that pool reboots.',
                   )}
                   isChecked={!nodesMode}
                   onChange={() => {
@@ -268,9 +244,9 @@ export const EnableTdxHost: FC = () => {
               {nodesMode ? (
                 <FormGroup label={t('Nodes')} fieldId="tdx-nodes" isRequired>
                   {selectableNodes.length === 0 ? (
-                    <Alert variant="info" isInline title={t('No standalone worker nodes found')}>
+                    <Alert variant="info" isInline title={t('No worker nodes found')}>
                       {t(
-                        'This cluster has no dedicated worker nodes (e.g. a 3-node compact cluster where the control-plane is schedulable). Switch to “All nodes in a MachineConfigPool” and target the “master” pool instead.',
+                        'This cluster has no worker nodes (e.g. a 3-node compact cluster). Switch to “A MachineConfigPool by role” and target the “master” pool instead.',
                       )}
                     </Alert>
                   ) : (
@@ -281,17 +257,16 @@ export const EnableTdxHost: FC = () => {
                           const labels = n.metadata?.labels ?? {};
                           const tdxDetected =
                             labels['intel.feature.node.kubernetes.io/tdx'] === 'true';
-                          const alreadyHost = TDX_HOST_NODE_ROLE_LABEL in labels;
+                          const pool = poolRoleForNode(n, pools ?? []);
                           return (
                             <div key={name} className="coco-openshift-console-plugin__nodelist-row">
                               <Checkbox
                                 id={`tdx-node-${name}`}
                                 label={name}
                                 description={[
-                                  nodeRoles(n).join(', ') || t('no roles'),
+                                  t('pool: {{pool}}', { pool }),
                                   isReady(n) ? t('Ready') : t('NotReady'),
                                   tdxDetected ? t('TDX detected') : null,
-                                  alreadyHost ? t('already a tdx-host') : null,
                                 ]
                                   .filter(Boolean)
                                   .join(' · ')}
@@ -306,7 +281,7 @@ export const EnableTdxHost: FC = () => {
                       </div>
                       <p className="coco-openshift-console-plugin__muted coco-openshift-console-plugin__mt">
                         {t('{{count}} of {{total}} nodes selected.', {
-                          count: selectedNames.length,
+                          count: selectedNodeObjs.length,
                           total: selectableNodes.length,
                         })}
                       </p>
@@ -344,10 +319,12 @@ export const EnableTdxHost: FC = () => {
               className="coco-openshift-console-plugin__mt"
             >
               {nodesMode
-                ? t(
-                    'Applying this reboots only the {{count}} selected node(s), one at a time. Other nodes are untouched.',
-                    { count: selectedNames.length },
-                  )
+                ? selectedRoles.length > 0
+                  ? t(
+                      'TDX arguments apply per MachineConfigPool. The selected nodes belong to: {{pools}} — every node in those pools reboots, one at a time.',
+                      { pools: selectedRoles.join(', ') },
+                    )
+                  : t('Select one or more nodes. TDX applies to the pools they belong to.')
                 : t(
                     'Applying this MachineConfig rolls out a reboot to every node in the "{{role}}" pool, one at a time.',
                     { role },

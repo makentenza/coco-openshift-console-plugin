@@ -1,4 +1,5 @@
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
+import type { MachineConfigPoolKind, NodeKind } from '../k8s/types';
 
 /**
  * Kernel arguments that activate the Intel TDX host on a node:
@@ -39,55 +40,34 @@ export const buildTdxHostMachineConfig = (role: string): K8sResourceCommon =>
   }) as K8sResourceCommon;
 
 // ---------------------------------------------------------------------------
-// Targeted TDX-host enablement (a chosen subset of nodes, not the whole pool).
+// Targeted TDX-host enablement.
 //
-// Applying the TDX MachineConfig to the "worker" pool reboots every worker. To
-// limit the blast radius to the nodes the user picks, we create a custom
-// MachineConfigPool ("tdx-host") that selects (a) base "worker" MachineConfigs
-// plus the "tdx-host" one and (b) only nodes carrying the
-// `node-role.kubernetes.io/tdx-host` label. Labeling a node moves it from the
-// worker pool into this pool, so only the selected nodes render the TDX config
-// and reboot — once.
+// Kernel arguments are applied per MachineConfigPool, not per node: a node belongs
+// to exactly one pool (a custom pool whose nodeSelector matches, else `worker`). An
+// earlier design created a separate `tdx-host` pool and labeled the selected nodes
+// into it — but CoCo/kata nodes already live in a custom pool (`kata-oc`), so that
+// put them in TWO custom pools, which the Machine Config Operator refuses ("belongs
+// to 2 custom roles") and the whole operator goes Degraded. So instead we apply the
+// TDX MachineConfig to the role of the pool each selected node ALREADY belongs to.
 // ---------------------------------------------------------------------------
 
-/** Role of the custom pool that holds the user-selected TDX hosts. */
-export const TDX_HOST_POOL_ROLE = 'tdx-host';
-/** Node-role label that places a node into the custom TDX-host pool. */
-export const TDX_HOST_NODE_ROLE_LABEL = `node-role.kubernetes.io/${TDX_HOST_POOL_ROLE}`;
-
 /**
- * Custom MachineConfigPool holding only the selected TDX hosts. It inherits the
- * base worker config (so the nodes stay normal workers) and adds the tdx-host
- * MachineConfig; its nodeSelector matches the tdx-host node-role label.
+ * The MachineConfigPool role a node currently belongs to: a custom pool whose
+ * nodeSelector matches the node's labels (e.g. `kata-oc`), else the default
+ * `worker`. TDX kernel args for that node must target this role.
  */
-export const buildTdxHostMachineConfigPool = (): K8sResourceCommon =>
-  ({
-    apiVersion: 'machineconfiguration.openshift.io/v1',
-    kind: 'MachineConfigPool',
-    metadata: { name: TDX_HOST_POOL_ROLE },
-    spec: {
-      machineConfigSelector: {
-        matchExpressions: [
-          {
-            key: 'machineconfiguration.openshift.io/role',
-            operator: 'In',
-            values: ['worker', TDX_HOST_POOL_ROLE],
-          },
-        ],
-      },
-      nodeSelector: {
-        matchLabels: { [TDX_HOST_NODE_ROLE_LABEL]: '' },
-      },
-    },
-  }) as K8sResourceCommon;
-
-/**
- * JSON Patch (RFC 6902) that adds the tdx-host node-role label to a node, moving
- * it into the custom pool. The label key's '/' is escaped per RFC 6901 ('~' →
- * '~0', '/' → '~1'). Real nodes always have a `metadata.labels` object, so a
- * single `add` on the escaped key creates or replaces just that label.
- */
-export const tdxHostNodeLabelPatch = (): { op: 'add'; path: string; value: string }[] => {
-  const escaped = TDX_HOST_NODE_ROLE_LABEL.replace(/~/g, '~0').replace(/\//g, '~1');
-  return [{ op: 'add', path: `/metadata/labels/${escaped}`, value: '' }];
+export const poolRoleForNode = (node: NodeKind, pools: MachineConfigPoolKind[]): string => {
+  const labels = node.metadata?.labels ?? {};
+  for (const p of pools) {
+    const name = p.metadata?.name;
+    if (!name || name === 'worker' || name === 'master') continue;
+    const sel = p.spec?.nodeSelector?.matchLabels ?? {};
+    const keys = Object.keys(sel);
+    if (keys.length > 0 && keys.every((k) => labels[k] === sel[k])) return name;
+  }
+  return 'worker';
 };
+
+/** Distinct pool roles among a set of nodes — the pools a TDX rollout will reboot. */
+export const rolesForNodes = (nodes: NodeKind[], pools: MachineConfigPoolKind[]): string[] =>
+  [...new Set(nodes.map((n) => poolRoleForNode(n, pools)))].sort((a, b) => a.localeCompare(b));

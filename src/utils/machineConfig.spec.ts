@@ -1,13 +1,11 @@
-import type { MachineConfigPoolKind } from '../k8s/types';
+import type { MachineConfigPoolKind, NodeKind } from '../k8s/types';
 import {
   buildTdxHostMachineConfig,
-  buildTdxHostMachineConfigPool,
   hasTdxHostArgs,
+  poolRoleForNode,
+  rolesForNodes,
   TDX_HOST_KERNEL_ARGS,
-  TDX_HOST_NODE_ROLE_LABEL,
-  TDX_HOST_POOL_ROLE,
   tdxHostMachineConfigName,
-  tdxHostNodeLabelPatch,
 } from './machineConfig';
 
 interface McShape {
@@ -15,10 +13,22 @@ interface McShape {
   spec: { kernelArguments?: string[] };
 }
 
+const node = (name: string, labels: Record<string, string> = {}): NodeKind => ({
+  metadata: { name, labels },
+});
+const workerPool: MachineConfigPoolKind = {
+  metadata: { name: 'worker' },
+  spec: { nodeSelector: { matchLabels: { 'node-role.kubernetes.io/worker': '' } } },
+};
+const kataPool: MachineConfigPoolKind = {
+  metadata: { name: 'kata-oc' },
+  spec: { nodeSelector: { matchLabels: { 'node-role.kubernetes.io/kata-oc': '' } } },
+};
+
 describe('tdxHostMachineConfigName', () => {
   it('names the MachineConfig after the pool role', () => {
     expect(tdxHostMachineConfigName('worker')).toBe('99-worker-tdx-host');
-    expect(tdxHostMachineConfigName(TDX_HOST_POOL_ROLE)).toBe('99-tdx-host-tdx-host');
+    expect(tdxHostMachineConfigName('kata-oc')).toBe('99-kata-oc-tdx-host');
   });
 });
 
@@ -32,36 +42,35 @@ describe('hasTdxHostArgs', () => {
 
 describe('buildTdxHostMachineConfig', () => {
   it('carries both kernel args and the role label', () => {
-    const mc = buildTdxHostMachineConfig('worker') as unknown as McShape;
-    expect(mc.metadata.name).toBe('99-worker-tdx-host');
-    expect(mc.metadata.labels?.['machineconfiguration.openshift.io/role']).toBe('worker');
+    const mc = buildTdxHostMachineConfig('kata-oc') as unknown as McShape;
+    expect(mc.metadata.name).toBe('99-kata-oc-tdx-host');
+    expect(mc.metadata.labels?.['machineconfiguration.openshift.io/role']).toBe('kata-oc');
     expect(mc.spec.kernelArguments).toEqual(TDX_HOST_KERNEL_ARGS);
   });
 });
 
-describe('buildTdxHostMachineConfigPool', () => {
-  const pool = buildTdxHostMachineConfigPool() as unknown as MachineConfigPoolKind;
-
-  it('is named after the tdx-host role', () => {
-    expect(pool.metadata?.name).toBe(TDX_HOST_POOL_ROLE);
+describe('poolRoleForNode', () => {
+  it('returns the custom pool a node belongs to (kata-oc), not worker', () => {
+    const n = node('metal', {
+      'node-role.kubernetes.io/worker': '',
+      'node-role.kubernetes.io/kata-oc': '',
+    });
+    expect(poolRoleForNode(n, [workerPool, kataPool])).toBe('kata-oc');
   });
 
-  it('inherits worker config and adds the tdx-host role', () => {
-    const expr = pool.spec?.machineConfigSelector?.matchExpressions?.[0];
-    expect(expr?.key).toBe('machineconfiguration.openshift.io/role');
-    expect(expr?.operator).toBe('In');
-    expect(expr?.values).toEqual(['worker', TDX_HOST_POOL_ROLE]);
-  });
-
-  it('selects only nodes carrying the tdx-host node-role label', () => {
-    expect(pool.spec?.nodeSelector?.matchLabels).toEqual({ [TDX_HOST_NODE_ROLE_LABEL]: '' });
+  it('falls back to worker when no custom pool matches', () => {
+    const n = node('w', { 'node-role.kubernetes.io/worker': '' });
+    expect(poolRoleForNode(n, [workerPool, kataPool])).toBe('worker');
   });
 });
 
-describe('tdxHostNodeLabelPatch', () => {
-  it('JSON-Pointer-escapes the "/" in the label key (RFC 6901)', () => {
-    expect(tdxHostNodeLabelPatch()).toEqual([
-      { op: 'add', path: '/metadata/labels/node-role.kubernetes.io~1tdx-host', value: '' },
-    ]);
+describe('rolesForNodes', () => {
+  it('returns the distinct sorted pool roles', () => {
+    const metal = node('metal', {
+      'node-role.kubernetes.io/worker': '',
+      'node-role.kubernetes.io/kata-oc': '',
+    });
+    const plain = node('w', { 'node-role.kubernetes.io/worker': '' });
+    expect(rolesForNodes([metal, plain], [workerPool, kataPool])).toEqual(['kata-oc', 'worker']);
   });
 });

@@ -25,6 +25,15 @@ export type KataConfigKind = K8sResourceCommon & {
     enablePeerPods?: boolean;
     logLevel?: string;
     checkNodeEligibility?: boolean;
+    /**
+     * Explicit node selector for which nodes get the kata runtime. When set, a node
+     * is included by carrying these labels; when empty, kata installs on all workers
+     * (or, with checkNodeEligibility, on NFD-labeled TEE nodes). The day-2 "add a
+     * node" flow reads this to know which label to apply to a newly-joined node.
+     */
+    kataConfigPoolSelector?: {
+      matchLabels?: Record<string, string>;
+    };
   };
   status?: {
     conditions?: {

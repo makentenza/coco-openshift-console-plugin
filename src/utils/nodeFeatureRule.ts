@@ -6,6 +6,48 @@ export const NFD_NAMESPACE = 'openshift-nfd';
 export const NFD_INSTANCE_NAME = 'nfd-instance';
 export const TEE_NODE_FEATURE_RULE_NAME = 'coco-tee-detection';
 
+// ---- Node Feature Discovery operator (OLM) ----
+// The NodeFeatureDiscovery / NodeFeatureRule CRDs only exist once the NFD operator is
+// installed, so the TEE-detection wizard can install it first (OwnNamespace operator:
+// Namespace + OperatorGroup + Subscription). We watch this CRD to know it is ready.
+export const NFD_OPERATOR = 'nfd';
+export const NFD_OPERATOR_CHANNEL = 'stable';
+export const NFD_OPERATOR_SOURCE = 'redhat-operators';
+export const NFD_OPERATOR_SOURCE_NS = 'openshift-marketplace';
+/** CRD whose presence means the NFD operator is installed and its API is served. */
+export const NFD_CRD = 'nodefeaturediscoveries.nfd.openshift.io';
+
+/** Namespace the NFD operator installs into. */
+export const buildNfdNamespace = (namespace: string): K8sResourceCommon => ({
+  apiVersion: 'v1',
+  kind: 'Namespace',
+  metadata: { name: namespace },
+});
+
+/** OperatorGroup scoping the (OwnNamespace) NFD operator to its install namespace. */
+export const buildNfdOperatorGroup = (namespace: string): K8sResourceCommon =>
+  ({
+    apiVersion: 'operators.coreos.com/v1',
+    kind: 'OperatorGroup',
+    metadata: { name: namespace, namespace },
+    spec: { targetNamespaces: [namespace] },
+  }) as K8sResourceCommon;
+
+/** Subscription that installs the Red Hat NFD operator from redhat-operators. */
+export const buildNfdSubscription = (namespace: string): K8sResourceCommon =>
+  ({
+    apiVersion: 'operators.coreos.com/v1alpha1',
+    kind: 'Subscription',
+    metadata: { name: NFD_OPERATOR, namespace },
+    spec: {
+      channel: NFD_OPERATOR_CHANNEL,
+      name: NFD_OPERATOR,
+      source: NFD_OPERATOR_SOURCE,
+      sourceNamespace: NFD_OPERATOR_SOURCE_NS,
+      installPlanApproval: 'Automatic',
+    },
+  }) as K8sResourceCommon;
+
 /** Derive the NFD operand image tag (vX.Y) from a ClusterVersion string like "4.21.19". */
 export const nfdOperandImage = (clusterVersion?: string): string => {
   const m = /^(\d+\.\d+)/.exec(clusterVersion ?? '');

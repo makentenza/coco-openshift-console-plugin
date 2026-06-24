@@ -113,6 +113,30 @@ export const MachineConfigModel: K8sModel = {
   crd: true,
 };
 
+/** Create-capable model for a custom MachineConfigPool (TDX-host node subset). */
+export const MachineConfigPoolModel: K8sModel = {
+  apiGroup: 'machineconfiguration.openshift.io',
+  apiVersion: 'v1',
+  kind: 'MachineConfigPool',
+  plural: 'machineconfigpools',
+  namespaced: false,
+  abbr: 'MCP',
+  label: 'MachineConfigPool',
+  labelPlural: 'MachineConfigPools',
+  crd: true,
+};
+
+/** Patch-capable model for labeling nodes (move selected hosts into a custom pool). */
+export const NodeModel: K8sModel = {
+  apiVersion: 'v1',
+  kind: 'Node',
+  plural: 'nodes',
+  namespaced: false,
+  abbr: 'N',
+  label: 'Node',
+  labelPlural: 'Nodes',
+};
+
 // ---- Core ----
 export const PodGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Pod' };
 export const DeploymentGVK: K8sGroupVersionKind = {
@@ -401,6 +425,18 @@ export const SubscriptionModel: K8sModel = {
   abbr: 'SUB',
   label: 'Subscription',
   labelPlural: 'Subscriptions',
+  crd: true,
+};
+/** OperatorGroup — required alongside a Subscription for an OwnNamespace operator (NFD). */
+export const OperatorGroupModel: K8sModel = {
+  apiGroup: 'operators.coreos.com',
+  apiVersion: 'v1',
+  kind: 'OperatorGroup',
+  plural: 'operatorgroups',
+  namespaced: true,
+  abbr: 'OG',
+  label: 'OperatorGroup',
+  labelPlural: 'OperatorGroups',
   crd: true,
 };
 /** apiextensions.k8s.io/v1 CustomResourceDefinition — watched to know when the operator is ready. */

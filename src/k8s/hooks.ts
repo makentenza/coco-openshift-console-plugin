@@ -7,6 +7,7 @@ import {
   NodeGVK,
   OSC_FEATURE_GATES_CM,
   OSC_NAMESPACE,
+  PEER_PODS_CM,
   PodGVK,
   RuntimeClassGVK,
 } from './resources';
@@ -21,6 +22,7 @@ import type {
   TeeNode,
 } from './types';
 import { classForRuntimeClass, isConfidentialClass } from '../utils/runtime';
+import { cvmPeerPodsEnabled } from '../utils/topology';
 import { teeNode } from '../utils/tee';
 import { podDisplayStatus, podRestartCount } from '../utils/status';
 

@@ -62,6 +62,14 @@ export interface TopoCluster {
 export const isConfidentialRuntimeName = (name?: string): boolean =>
   !!name && name.startsWith('kata-cc');
 
+/**
+ * True when peer-pods on this cluster run as Confidential VMs — peer-pods-cm has a
+ * CLOUD_PROVIDER and CVMs are not disabled (DISABLECVM !== 'true'). Only then may
+ * kata-remote workloads count as confidential in the cloud/peer-pods views.
+ */
+export const cvmPeerPodsEnabled = (peerPodsCmData?: Record<string, string>): boolean =>
+  Boolean(peerPodsCmData?.CLOUD_PROVIDER) && peerPodsCmData?.DISABLECVM !== 'true';
+
 /** TEE type from NFD node labels (tolerates a missing/undecoded node). */
 const teeTypeForNode = (node?: NodeKind): TeeType => {
   const labels = node?.metadata?.labels ?? {};

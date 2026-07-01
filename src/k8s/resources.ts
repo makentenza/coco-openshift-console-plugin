@@ -296,6 +296,8 @@ export const ClusterRoleBindingModel: K8sModel = {
 // ---- Well-known names / locations ----
 /** Where the OpenShift sandboxed containers operator and its config live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
+/** Peer-pods ConfigMap; its CLOUD_PROVIDER/DISABLECVM decide if kata-remote is a CVM. */
+export const PEER_PODS_CM = 'peer-pods-cm';
 /**
  * Configuration ConfigMap that enables confidential containers (data.confidential: "true"),
  * which makes the OSC operator install the kata-cc runtime. The ConfigMap keeps the name

@@ -162,6 +162,11 @@ const ConfidentialContainersOverview: FC = () => {
     () => runtimeClasses.filter((rc) => isConfidentialRuntimeClass(rc, cvmPeerPods)),
     [runtimeClasses, cvmPeerPods],
   );
+  // On-node TEE surfaces (TEE-capable nodes / Kata nodes ready) are meaningless on a
+  // peer-pods-only cloud cluster, where the TEE is a cloud Confidential VM (#20). Hide
+  // them there; keep them on bare-metal and mixed clusters. Matches CocoSetup's onNodeTee
+  // and the COCO_ONNODE_TEE nav flag.
+  const onNodeTee = teeNodes.length > 0 || kataConfig?.spec?.enablePeerPods !== true;
 
   const healthCounts = useMemo(() => {
     let healthy = 0,
@@ -225,14 +230,16 @@ const ConfidentialContainersOverview: FC = () => {
               href="/confidential-containers/workloads"
             />
           </GridItem>
-          <GridItem span={2}>
-            <StatTile
-              value={teeNodes.length}
-              label={t('TEE-capable nodes')}
-              loading={!kcLoaded}
-              href="/confidential-containers/tee-nodes"
-            />
-          </GridItem>
+          {onNodeTee && (
+            <GridItem span={2}>
+              <StatTile
+                value={teeNodes.length}
+                label={t('TEE-capable nodes')}
+                loading={!kcLoaded}
+                href="/confidential-containers/tee-nodes"
+              />
+            </GridItem>
+          )}
           <GridItem span={3}>
             <StatTile
               value={confidentialRCs.length}
@@ -240,14 +247,16 @@ const ConfidentialContainersOverview: FC = () => {
               href="/confidential-containers/runtime-classes"
             />
           </GridItem>
-          <GridItem span={2}>
-            <StatTile
-              value={kata.ready}
-              label={t('Kata nodes ready')}
-              loading={!kcLoaded}
-              href="/confidential-containers/tee-nodes"
-            />
-          </GridItem>
+          {onNodeTee && (
+            <GridItem span={2}>
+              <StatTile
+                value={kata.ready}
+                label={t('Kata nodes ready')}
+                loading={!kcLoaded}
+                href="/confidential-containers/tee-nodes"
+              />
+            </GridItem>
+          )}
           <GridItem span={6}>
             <Card>
               <CardTitle>{t('Confidential computing status')}</CardTitle>
@@ -315,47 +324,49 @@ const ConfidentialContainersOverview: FC = () => {
             </Card>
           </GridItem>
 
-          <GridItem span={6}>
-            <Card>
-              <CardTitle>{t('TEE-capable nodes')}</CardTitle>
-              <CardBody>
-                {teeNodes.length === 0 ? (
-                  <span className="coco-openshift-console-plugin__muted">
-                    {t(
-                      'No TEE-capable nodes detected. Install the Node Feature Discovery operator and a NodeFeatureRule to label TDX / SEV-SNP nodes.',
-                    )}
-                  </span>
-                ) : (
-                  <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }}>
-                    {teeNodes.map((n) => (
-                      <FlexItem key={n.name}>
-                        <Flex
-                          justifyContent={{ default: 'justifyContentSpaceBetween' }}
-                          alignItems={{ default: 'alignItemsCenter' }}
-                        >
-                          <FlexItem>
-                            <ResourceLink groupVersionKind={NodeGVK} name={n.name} />
-                          </FlexItem>
-                          <FlexItem>
-                            {n.tee !== 'none' && (
-                              <Label color="blue" isCompact>
-                                {teeLabel(n.tee)}
-                              </Label>
-                            )}{' '}
-                            {n.gpuCcReady && (
-                              <Label color="purple" isCompact>
-                                {t('GPU CC')}
-                              </Label>
-                            )}
-                          </FlexItem>
-                        </Flex>
-                      </FlexItem>
-                    ))}
-                  </Flex>
-                )}
-              </CardBody>
-            </Card>
-          </GridItem>
+          {onNodeTee && (
+            <GridItem span={6}>
+              <Card>
+                <CardTitle>{t('TEE-capable nodes')}</CardTitle>
+                <CardBody>
+                  {teeNodes.length === 0 ? (
+                    <span className="coco-openshift-console-plugin__muted">
+                      {t(
+                        'No TEE-capable nodes detected. Install the Node Feature Discovery operator and a NodeFeatureRule to label TDX / SEV-SNP nodes.',
+                      )}
+                    </span>
+                  ) : (
+                    <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }}>
+                      {teeNodes.map((n) => (
+                        <FlexItem key={n.name}>
+                          <Flex
+                            justifyContent={{ default: 'justifyContentSpaceBetween' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <ResourceLink groupVersionKind={NodeGVK} name={n.name} />
+                            </FlexItem>
+                            <FlexItem>
+                              {n.tee !== 'none' && (
+                                <Label color="blue" isCompact>
+                                  {teeLabel(n.tee)}
+                                </Label>
+                              )}{' '}
+                              {n.gpuCcReady && (
+                                <Label color="purple" isCompact>
+                                  {t('GPU CC')}
+                                </Label>
+                              )}
+                            </FlexItem>
+                          </Flex>
+                        </FlexItem>
+                      ))}
+                    </Flex>
+                  )}
+                </CardBody>
+              </Card>
+            </GridItem>
+          )}
 
           <GridItem span={12}>
             <Card>

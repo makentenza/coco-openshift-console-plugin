@@ -150,7 +150,7 @@
       "path": "/confidential-containers/tee-nodes",
       "component": { "$codeRef": "TeeNodesList" }
     },
-    "flags": { "required": ["COCO_KATACONFIG"] }
+    "flags": { "required": ["COCO_KATACONFIG", "COCO_ONNODE_TEE"] }
   },
   {
     "type": "console.page/route",

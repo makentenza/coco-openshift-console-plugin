@@ -326,13 +326,13 @@ const CocoSetup: FC = () => {
             <Button
               variant="link"
               component="a"
-              href="https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers/index"
+              href="https://github.com/confidential-devhub/veritas"
               target="_blank"
               rel="noopener noreferrer"
               icon={<ExternalLinkAltIcon />}
               iconPosition="end"
             >
-              {t('Attestation setup docs')}
+              {t('Bare-metal attestation reference values (veritas)')}
             </Button>
           </FlexItem>
         </Flex>

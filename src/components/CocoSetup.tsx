@@ -29,6 +29,7 @@ import { Link } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import {
   useConfidentialEnabled,
+  useCvmPeerPods,
   useKataConfig,
   useRuntimeClasses,
   useTeeNodes,
@@ -69,13 +70,28 @@ const CocoSetup: FC = () => {
   const [ccEnabled] = useConfidentialEnabled();
   const { teeNodes } = useTeeNodes();
   const [runtimeClasses] = useRuntimeClasses();
+  const cvmPeerPods = useCvmPeerPods();
 
   const kata = kataInstallSummary(kataConfig);
   const confidentialRCs = useMemo(
-    () => runtimeClasses.filter(isConfidentialRuntimeClass),
-    [runtimeClasses],
+    () => runtimeClasses.filter((rc) => isConfidentialRuntimeClass(rc, cvmPeerPods)),
+    [runtimeClasses, cvmPeerPods],
   );
   const ccRuntimeReady = confidentialRCs.length > 0;
+  // Deployment topology. A cluster may be bare-metal (on-node kata-cc TEE nodes),
+  // cloud peer-pods (kata-remote in a cloud Confidential VM), or a mix of both —
+  // e.g. a cloud cluster with attached bare-metal TEE nodes. Peer-pods is signalled
+  // by KataConfig.spec.enablePeerPods. On-node TEE steps (node labeling, host
+  // quote-generation infrastructure) are only relevant when the cluster actually has
+  // — or could have — bare-metal TEE nodes, so we key them on the presence of TEE
+  // nodes rather than on "is this cloud", which keeps them visible on mixed clusters.
+  const peerPodsMode = kataConfig?.spec?.enablePeerPods === true;
+  const onNodeTee = teeNodes.length > 0 || !peerPodsMode;
+  // Name the confidential runtime the platform will use, for step copy.
+  const confidentialRcNames = confidentialRCs.map((rc) => rc.metadata?.name).filter(Boolean);
+  const runtimeExample = confidentialRcNames.includes('kata-remote')
+    ? 'kata-remote'
+    : (confidentialRcNames[0] ?? (peerPodsMode ? 'kata-remote' : 'kata-cc'));
   // Which TEEs are present, so the attestation-infrastructure step is chip-aware.
   const teeKinds = {
     tdx: teeNodes.some((n) => n.tee === 'tdx'),
@@ -109,8 +125,13 @@ const CocoSetup: FC = () => {
 
   const [tdxSetupOpen, setTdxSetupOpen] = useState(false);
 
-  const steps: Step[] = [
-    {
+  const steps: Step[] = [];
+
+  // On-node TEE nodes (bare-metal). Hidden on a peer-pods-only cluster where no node
+  // is — or can be — a TEE host; there the workload's TEE is a cloud Confidential VM.
+  // Kept visible on mixed clusters (peer pods + attached bare-metal TEE nodes).
+  if (onNodeTee) {
+    steps.push({
       title: t('TEE-capable nodes'),
       status: teeNodes.length > 0 ? 'done' : 'todo',
       detail:
@@ -123,61 +144,90 @@ const CocoSetup: FC = () => {
         label: teeNodes.length > 0 ? t('View TEE nodes') : t('Detect TEE nodes'),
         href: '/confidential-containers/tee-nodes',
       },
-    },
-    {
-      title: t('Confidential containers enabled'),
-      status: ccEnabled ? 'done' : 'info',
-      detail: ccEnabled
-        ? t('Confidential containers are enabled, so the operator installs the kata-cc runtime.')
+    });
+  }
+
+  // Cloud Confidential VMs (peer pods). Shown when peer pods are enabled — the cloud
+  // provider owns the TEE, so there is no node labeling or host quote-generation.
+  if (peerPodsMode) {
+    steps.push({
+      title: t('Confidential peer pods (Confidential VMs)'),
+      status: cvmPeerPods ? 'done' : 'warn',
+      detail: cvmPeerPods
+        ? t(
+            'Peer pods on this cluster run as Confidential VMs (peer-pods-cm has CLOUD_PROVIDER and DISABLECVM is not "true"), so kata-remote workloads run inside a cloud hardware TEE. The cloud provider owns the TEE — there is no TEE-capable node or host quote-generation to configure here.',
+          )
         : t(
-            'Enable confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
+            'Peer pods are enabled but not as Confidential VMs. In peer-pods-cm set DISABLECVM to "false" and a confidential instance type (for example AZURE_INSTANCE_SIZE Standard_DC*as_v5 for AMD SEV-SNP or Standard_EC*eds_v5 for Intel TDX). Until then kata-remote pods run in a normal VM and are not confidential.',
           ),
-      node: ccEnabled ? undefined : <EnableConfidentialContainers />,
-    },
-    {
-      title: t('kata-cc runtime installed'),
-      status:
-        ccRuntimeReady && kata.state === 'installed'
-          ? 'done'
-          : kata.state === 'inProgress' || kata.state === 'failed'
-            ? 'warn'
-            : 'todo',
-      detail: ccRuntimeReady ? (
-        <span className="coco-openshift-console-plugin__mono">
-          {confidentialRCs.map((rc) => rc.metadata?.name).join(', ')}
-        </span>
-      ) : kataConfig ? (
-        <Flex
-          alignItems={{ default: 'alignItemsCenter' }}
-          gap={{ default: 'gapSm' }}
-          flexWrap={{ default: 'wrap' }}
-        >
-          <FlexItem>
-            <ResourceLink
-              groupVersionKind={KataConfigGVK}
-              name={kataConfig.metadata?.name}
-              inline
-            />
-          </FlexItem>
-          <FlexItem>
-            <Label
-              isCompact
-              color={
-                kata.state === 'installed' ? 'green' : kata.state === 'failed' ? 'red' : 'orange'
-              }
-            >
-              {t('{{state}} ({{ready}} nodes)', { state: kata.label, ready: kata.ready })}
-            </Label>
-          </FlexItem>
-        </Flex>
-      ) : (
-        t(
-          'Create a KataConfig with confidential containers enabled to install the kata-cc runtime on your TEE nodes. This reboots the selected nodes.',
-        )
-      ),
-      node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
-    },
-    {
+    });
+  }
+
+  steps.push({
+    title: t('Confidential containers enabled'),
+    status: ccEnabled ? 'done' : 'info',
+    detail: ccEnabled
+      ? peerPodsMode
+        ? t(
+            'Confidential containers are enabled, so the operator provides the kata-remote runtime.',
+          )
+        : t('Confidential containers are enabled, so the operator installs the kata-cc runtime.')
+      : t(
+          'Enable confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then provides the confidential runtime (kata-cc on TEE nodes, kata-remote for cloud Confidential VMs).',
+        ),
+    node: ccEnabled ? undefined : <EnableConfidentialContainers />,
+  });
+
+  steps.push({
+    title: t('Confidential runtime installed'),
+    status:
+      ccRuntimeReady && (peerPodsMode || kata.state === 'installed')
+        ? 'done'
+        : kata.state === 'inProgress' || kata.state === 'failed'
+          ? 'warn'
+          : 'todo',
+    detail: ccRuntimeReady ? (
+      <span className="coco-openshift-console-plugin__mono">
+        {confidentialRCs.map((rc) => rc.metadata?.name).join(', ')}
+      </span>
+    ) : kataConfig ? (
+      <Flex
+        alignItems={{ default: 'alignItemsCenter' }}
+        gap={{ default: 'gapSm' }}
+        flexWrap={{ default: 'wrap' }}
+      >
+        <FlexItem>
+          <ResourceLink groupVersionKind={KataConfigGVK} name={kataConfig.metadata?.name} inline />
+        </FlexItem>
+        <FlexItem>
+          <Label
+            isCompact
+            color={
+              kata.state === 'installed' ? 'green' : kata.state === 'failed' ? 'red' : 'orange'
+            }
+          >
+            {t('{{state}} ({{ready}} nodes)', { state: kata.label, ready: kata.ready })}
+          </Label>
+        </FlexItem>
+      </Flex>
+    ) : peerPodsMode ? (
+      t(
+        'Create a KataConfig with enablePeerPods and confidential containers enabled to provide the kata-remote runtime for cloud Confidential VMs.',
+      )
+    ) : (
+      t(
+        'Create a KataConfig with confidential containers enabled to install the kata-cc runtime on your TEE nodes. This reboots the selected nodes.',
+      )
+    ),
+    node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
+  });
+
+  // Host quote-generation infrastructure (Intel DCAP: PCCS + QGS). Only bare-metal
+  // TEE nodes need this — a cloud Confidential VM produces its own evidence and
+  // Trustee verifies it remotely against the cloud provider / Intel PCS, so this
+  // step is skipped on peer-pods-only clusters (#18).
+  if (onNodeTee) {
+    steps.push({
       title: t('Attestation infrastructure (TEE quote generation)'),
       // For Intel TDX this is now live (PCCS + QGS watched in intel-dcap). It is the
       // most commonly-missed prerequisite — without it every attestation fails with
@@ -276,7 +326,7 @@ const CocoSetup: FC = () => {
             <Button
               variant="link"
               component="a"
-              href="https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers/configure-confidential-containers#deploying-intel-tdx-remote-attestation_bare-metal-cc"
+              href="https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers/index"
               target="_blank"
               rel="noopener noreferrer"
               icon={<ExternalLinkAltIcon />}
@@ -287,20 +337,24 @@ const CocoSetup: FC = () => {
           </FlexItem>
         </Flex>
       ),
-    },
-    {
-      title: t('Run a confidential workload'),
-      status: ccRuntimeReady ? 'info' : 'todo',
-      detail: ccRuntimeReady
-        ? t(
-            'Deploy a workload with runtimeClassName: kata-cc, then use the Verify attestation action on the Workloads list to check it.',
-          )
+    });
+  }
+
+  steps.push({
+    title: t('Run a confidential workload'),
+    status: ccRuntimeReady ? 'info' : 'todo',
+    detail: ccRuntimeReady
+      ? t(
+          'Deploy a workload with runtimeClassName: {{runtimeClass}}, then use the Verify attestation action on the Workloads list to check it.',
+          { runtimeClass: runtimeExample },
+        )
+      : peerPodsMode
+        ? t('Available once the kata-remote runtime is installed for cloud Confidential VMs.')
         : t('Available once the kata-cc runtime is installed on your TEE nodes.'),
-      action: ccRuntimeReady
-        ? { label: t('Create workload'), href: '/confidential-containers/workloads/~new' }
-        : undefined,
-    },
-  ];
+    action: ccRuntimeReady
+      ? { label: t('Create workload'), href: '/confidential-containers/workloads/~new' }
+      : undefined,
+  });
 
   return (
     <>

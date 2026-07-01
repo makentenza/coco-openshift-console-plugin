@@ -26,7 +26,7 @@ import type { FC } from 'react';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
-import { useRuntimeClasses } from '../k8s/hooks';
+import { useCvmPeerPods, useRuntimeClasses } from '../k8s/hooks';
 import {
   CC_INIT_DATA_ANNOTATION,
   ConfigMapGVK,
@@ -61,6 +61,7 @@ const ConfidentialWorkloadDetail: FC = () => {
   const { ns, name } = useParams();
 
   const [runtimeClasses] = useRuntimeClasses();
+  const cvmPeerPods = useCvmPeerPods();
   const [pod] = useK8sWatchResource<PodKind>({
     groupVersionKind: PodGVK,
     name,
@@ -90,8 +91,10 @@ const ConfidentialWorkloadDetail: FC = () => {
     const rcName = pod?.spec?.runtimeClassName;
     const rc = runtimeClasses.find((r) => r.metadata?.name === rcName);
     const cc = rc ? classForRuntimeClass(rc) : 'unknown';
-    return isConfidentialClass(cc) ? cc : 'unknown';
-  }, [pod, runtimeClasses]);
+    // kata-remote (peerpod) is confidential only on CVM peer-pods clusters — same
+    // gate as the list/overview so a cloud workload detail isn't shown as "unknown".
+    return isConfidentialClass(cc) || (cvmPeerPods && cc === 'peerpod') ? cc : 'unknown';
+  }, [pod, runtimeClasses, cvmPeerPods]);
 
   const workload: CcWorkload | undefined = useMemo(() => {
     if (!pod) return undefined;

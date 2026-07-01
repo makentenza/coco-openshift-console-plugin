@@ -5,7 +5,7 @@ import type { FC } from 'react';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
-import { useConfidentialWorkloads, useRuntimeClasses } from '../k8s/hooks';
+import { useConfidentialWorkloads, useCvmPeerPods, useRuntimeClasses } from '../k8s/hooks';
 import { RuntimeClassGVK } from '../k8s/resources';
 import {
   ccClassDescription,
@@ -19,10 +19,11 @@ const RuntimeClassesList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [runtimeClasses, loaded] = useRuntimeClasses();
   const { workloads } = useConfidentialWorkloads();
+  const cvmPeerPods = useCvmPeerPods();
 
   const confidentialRCs = useMemo(
-    () => runtimeClasses.filter(isConfidentialRuntimeClass),
-    [runtimeClasses],
+    () => runtimeClasses.filter((rc) => isConfidentialRuntimeClass(rc, cvmPeerPods)),
+    [runtimeClasses, cvmPeerPods],
   );
 
   const usage = useMemo(() => {
@@ -42,7 +43,7 @@ const RuntimeClassesList: FC = () => {
           <EmptyState headingLevel="h4" titleText={t('No confidential runtime classes')}>
             <EmptyStateBody>
               {t(
-                'The kata-cc runtime class is created when confidential containers are enabled and a KataConfig is installed on TEE-capable nodes.',
+                'On bare-metal TEE nodes, the kata-cc runtime class is created when confidential containers are enabled and a KataConfig is installed. On cloud (peer pods), the kata-remote runtime class is confidential when peer pods run as Confidential VMs (peer-pods-cm has CLOUD_PROVIDER and DISABLECVM is not "true").',
               )}
             </EmptyStateBody>
           </EmptyState>

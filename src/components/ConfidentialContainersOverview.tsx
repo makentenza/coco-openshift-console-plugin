@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 import {
   useConfidentialEnabled,
   useConfidentialWorkloads,
+  useCvmPeerPods,
   useKataConfig,
   useRuntimeClasses,
   useTeeNodes,
@@ -154,11 +155,12 @@ const ConfidentialContainersOverview: FC = () => {
   const { workloads, loaded } = useConfidentialWorkloads();
   const [ccEnabled, ccEnabledLoaded] = useConfidentialEnabled();
   const { teeNodes } = useTeeNodes();
+  const cvmPeerPods = useCvmPeerPods();
 
   const kata = kataInstallSummary(kataConfig);
   const confidentialRCs = useMemo(
-    () => runtimeClasses.filter(isConfidentialRuntimeClass),
-    [runtimeClasses],
+    () => runtimeClasses.filter((rc) => isConfidentialRuntimeClass(rc, cvmPeerPods)),
+    [runtimeClasses, cvmPeerPods],
   );
 
   const healthCounts = useMemo(() => {

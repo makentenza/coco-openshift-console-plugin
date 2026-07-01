@@ -11,6 +11,12 @@
     }
   },
   {
+    "type": "console.flag/hookProvider",
+    "properties": {
+      "handler": { "$codeRef": "flags.useCocoFeatureFlags" }
+    }
+  },
+  {
     "type": "console.model-metadata",
     "properties": {
       "model": {
@@ -88,7 +94,7 @@
       "name": "%plugin__coco-openshift-console-plugin~TEE nodes%",
       "href": "/confidential-containers/tee-nodes"
     },
-    "flags": { "required": ["COCO_KATACONFIG"] }
+    "flags": { "required": ["COCO_KATACONFIG", "COCO_ONNODE_TEE"] }
   },
   {
     "type": "console.navigation/href",

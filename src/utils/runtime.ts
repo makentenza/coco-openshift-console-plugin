@@ -25,9 +25,18 @@ export const classForRuntimeClass = (rc: RuntimeClassKind): CcClass => {
 export const isConfidentialClass = (c: CcClass): boolean =>
   c === 'confidential' || c === 'confidential-gpu';
 
-/** Is this RuntimeClass one of the confidential (kata-cc) runtimes? */
-export const isConfidentialRuntimeClass = (rc: RuntimeClassKind): boolean =>
-  isConfidentialClass(classForRuntimeClass(rc));
+/**
+ * Is this RuntimeClass confidential? The kata-cc family always is. kata-remote
+ * (peer pods) is confidential only when peer-pods on this cluster run as
+ * Confidential VMs — pass `cvmPeerPods` (from {@link cvmPeerPodsEnabled}) so cloud
+ * deployments recognize kata-remote while plain non-CVM peer pods stay excluded.
+ * Keeping this in step with useConfidentialWorkloads is what lets the runtime-class
+ * and overview views agree with the workloads/topology views on every platform.
+ */
+export const isConfidentialRuntimeClass = (rc: RuntimeClassKind, cvmPeerPods = false): boolean => {
+  const cc = classForRuntimeClass(rc);
+  return isConfidentialClass(cc) || (cvmPeerPods && cc === 'peerpod');
+};
 
 export const ccClassLabel = (c: CcClass): string => {
   switch (c) {

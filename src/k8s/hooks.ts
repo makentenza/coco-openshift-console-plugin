@@ -69,6 +69,22 @@ export const useConfidentialEnabled = (): [boolean | undefined, boolean] => {
   return [settled ? hasKataCc || hasCvmPeerPods : undefined, settled];
 };
 
+/**
+ * True when peer-pods on this cluster run as Confidential VMs (see
+ * {@link cvmPeerPodsEnabled}). Components use this to treat kata-remote as a
+ * confidential runtime, keeping cloud/peer-pods views consistent with the
+ * kata-cc bare-metal views. A cluster may have both — cloud CVM peer pods and
+ * attached bare-metal TEE nodes — so this is additive, not either/or.
+ */
+export const useCvmPeerPods = (): boolean => {
+  const [peerPodsCm] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
+  return cvmPeerPodsEnabled(peerPodsCm?.data);
+};
+
 export const useNodes = (): [NodeKind[], boolean] => {
   const [data, loaded] = useK8sWatchResource<NodeKind[]>({
     groupVersionKind: NodeGVK,

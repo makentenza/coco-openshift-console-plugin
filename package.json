@@ -80,7 +80,8 @@
       "TeeNodesList": "./components/TeeNodesList",
       "RuntimeClassesList": "./components/RuntimeClassesList",
       "CreateConfidentialWorkload": "./components/CreateConfidentialWorkload",
-      "AttestationTopology": "./components/AttestationTopology"
+      "AttestationTopology": "./components/AttestationTopology",
+      "flags": "./flags"
     },
     "dependencies": {
       "@console/pluginAPI": "^4.22.0"

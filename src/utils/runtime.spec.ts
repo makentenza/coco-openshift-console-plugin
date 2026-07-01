@@ -1,8 +1,7 @@
 import type { RuntimeClassKind } from '../k8s/types';
 import { classForRuntimeClass, isConfidentialClass, isConfidentialRuntimeClass } from './runtime';
 
-const rc = (name: string, handler: string): RuntimeClassKind =>
-  ({ metadata: { name }, handler }) as RuntimeClassKind;
+const rc = (name: string, handler: string): RuntimeClassKind => ({ metadata: { name }, handler });
 
 describe('classForRuntimeClass', () => {
   it('classifies kata-cc as confidential', () => {
@@ -10,7 +9,9 @@ describe('classForRuntimeClass', () => {
   });
 
   it('classifies kata-cc-nvidia-gpu as confidential-gpu', () => {
-    expect(classForRuntimeClass(rc('kata-cc-nvidia-gpu', 'kata-qemu-snp'))).toBe('confidential-gpu');
+    expect(classForRuntimeClass(rc('kata-cc-nvidia-gpu', 'kata-qemu-snp'))).toBe(
+      'confidential-gpu',
+    );
   });
 
   it('classifies kata-remote as peerpod', () => {

@@ -36,14 +36,12 @@ import {
   SelectOption,
   TextArea,
   TextInput,
-  TextInputGroup,
-  TextInputGroupMain,
   Wizard,
   WizardStep,
 } from '@patternfly/react-core';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import type { FC, Ref } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import {
@@ -69,12 +67,12 @@ import { isValidCdhResourcePath } from '../utils/cdhPath';
 import { fnv1aHex } from '../utils/checksum';
 import { inspectInitdata, isInClusterKbsHost, kbsHostFromUrl } from '../utils/topology';
 import type { InitdataInspection } from '../utils/topology';
+import { NamespaceSelect } from './NamespaceSelect';
 import './coco.css';
 
 type Kind = 'Pod' | 'Deployment';
 type RuntimeClass = 'kata-cc' | 'kata-cc-nvidia-gpu';
 
-const CREATE_NS_SENTINEL = '__coco_create_namespace__';
 const IS_DEFAULT_SC_ANNOTATION = 'storageclass.kubernetes.io/is-default-class';
 /** Placeholder shown when no LUKS helper image is supplied — must be replaced by the user. */
 const LUKS_HELPER_PLACEHOLDER = '<luks-helper-image>';
@@ -153,10 +151,10 @@ const CreateConfidentialWorkload: FC = () => {
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
-  // --- Namespace typeahead (pick existing or type a brand-new name) ---
-  // Project (project.openshift.io) is the RBAC-aware list of namespaces the user
-  // can see: a non-admin can't list cluster-scoped Namespaces but can list their
-  // Projects; for an admin it's every namespace.
+  // Project (project.openshift.io) is the RBAC-aware list of namespaces the user can see:
+  // a non-admin can't list cluster-scoped Namespaces but can list their Projects; for an
+  // admin it's every namespace. NamespaceSelect renders the picker; the parent keeps the
+  // list to decide whether the chosen namespace must be created on submit.
   const [projects] = useK8sWatchResource<NamespaceKind[]>({
     groupVersionKind: ProjectGVK,
     isList: true,
@@ -168,29 +166,8 @@ const CreateConfidentialWorkload: FC = () => {
       ),
     [projects],
   );
-  const [nsOpen, setNsOpen] = useState(false);
-  // What the user has typed into the combobox input (drives filtering + creatable option).
-  const [nsInput, setNsInput] = useState(namespace);
-  const nsToggleRef = useRef<MenuToggleElement>(null);
   const nsTrimmed = namespace.trim();
   const namespaceExists = nsNames.includes(nsTrimmed);
-  const nsFilter = nsInput.trim().toLowerCase();
-  // Don't filter while the input still shows the current selection, so opening the
-  // menu lists every namespace; only narrow once the user types something new.
-  const filterActive = nsFilter !== '' && nsFilter !== nsTrimmed.toLowerCase();
-  const filteredNs = filterActive
-    ? nsNames.filter((n) => n.toLowerCase().includes(nsFilter))
-    : nsNames;
-  // Offer a creatable option when the typed text doesn't exactly match an existing namespace.
-  const nsTypedValue = nsInput.trim();
-  const showCreateNsOption = nsTypedValue !== '' && !nsNames.includes(nsTypedValue);
-
-  const selectNamespace = (value: string) => {
-    setNamespace(value);
-    setNsInput(value);
-    setNsOpen(false);
-    nsToggleRef.current?.focus();
-  };
 
   // --- Encrypted block volume (LUKS) wizard ---
   const [enc, setEnc] = useState(false);
@@ -602,70 +579,13 @@ const CreateConfidentialWorkload: FC = () => {
                 />
               </FormGroup>
               <FormGroup label={t('Namespace')} isRequired fieldId="cw-namespace">
-                <Select
-                  isOpen={nsOpen}
-                  selected={namespaceExists ? nsTrimmed : undefined}
-                  onSelect={(_e, value) => {
-                    if (value === CREATE_NS_SENTINEL) {
-                      selectNamespace(nsTypedValue);
-                    } else if (typeof value === 'string') {
-                      selectNamespace(value);
-                    }
-                  }}
-                  onOpenChange={(isOpen) => {
-                    setNsOpen(isOpen);
-                  }}
-                  toggle={(toggleRef: Ref<MenuToggleElement>) => (
-                    <MenuToggle
-                      variant="typeahead"
-                      aria-label={t('Namespace')}
-                      ref={toggleRef}
-                      isExpanded={nsOpen}
-                      isFullWidth
-                      onClick={() => {
-                        setNsOpen(!nsOpen);
-                      }}
-                    >
-                      <TextInputGroup isPlain>
-                        <TextInputGroupMain
-                          id="cw-namespace"
-                          value={nsInput}
-                          innerRef={nsToggleRef}
-                          placeholder={t('Select or enter a namespace')}
-                          role="combobox"
-                          isExpanded={nsOpen}
-                          aria-controls="cw-namespace-listbox"
-                          onClick={() => {
-                            setNsOpen(!nsOpen);
-                          }}
-                          onChange={(_e, v) => {
-                            setNsInput(v);
-                            setNamespace(v);
-                            if (!nsOpen) setNsOpen(true);
-                          }}
-                        />
-                      </TextInputGroup>
-                    </MenuToggle>
-                  )}
-                >
-                  <SelectList id="cw-namespace-listbox">
-                    {filteredNs.map((ns) => (
-                      <SelectOption key={ns} value={ns}>
-                        {ns}
-                      </SelectOption>
-                    ))}
-                    {showCreateNsOption && (
-                      <SelectOption key="__create__" value={CREATE_NS_SENTINEL}>
-                        {t('Create new namespace: {{name}}', { name: nsTypedValue })}
-                      </SelectOption>
-                    )}
-                    {filteredNs.length === 0 && !showCreateNsOption && (
-                      <SelectOption isDisabled value="__none__">
-                        {t('No namespaces found')}
-                      </SelectOption>
-                    )}
-                  </SelectList>
-                </Select>
+                <NamespaceSelect
+                  id="cw-namespace"
+                  value={namespace}
+                  onChange={setNamespace}
+                  namespaces={nsNames}
+                  creatable
+                />
                 {nsTrimmed !== '' && !namespaceExists && (
                   <HelperText>
                     <HelperTextItem variant="warning">

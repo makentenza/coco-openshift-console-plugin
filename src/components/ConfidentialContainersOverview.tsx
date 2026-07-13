@@ -203,7 +203,7 @@ const ConfidentialContainersOverview: FC = () => {
                 titleText={t('Confidential containers are not enabled yet')}
               >
                 <EmptyStateBody>
-                  {cvmPeerPods
+                  {!onNodeTee
                     ? t(
                         'The Confidential Containers menu is available because sandboxed containers (KataConfig) is installed, but the confidential feature is still off. Enabling it sets confidential: "true" on the osc-feature-gates ConfigMap. On this cluster peer pods run in the cloud, so this makes your peer-pod VMs Confidential VMs using the kata-remote runtime — nothing is installed on your worker nodes and they are not rebooted. To make peer pods confidential you also set DISABLECVM to "false" and a confidential instance type in the peer pods config map.',
                       )

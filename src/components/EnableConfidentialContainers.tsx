@@ -22,7 +22,7 @@ import { CheckCircleIcon } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTeeNodes } from '../k8s/hooks';
+import { useCvmPeerPods, useTeeNodes } from '../k8s/hooks';
 import {
   ConfigMapGVK,
   ConfigMapModel,
@@ -106,6 +106,10 @@ export const EnableConfidentialContainers: FC = () => {
   const cmExists = !!cm;
 
   const { teeNodes, loaded: nodesLoaded } = useTeeNodes();
+  // On a cloud/peer-pods cluster the confidential runtime is kata-remote (the
+  // pod VMs become Confidential VMs); the operator does NOT install kata-cc on
+  // the worker nodes and does NOT reboot them. Only the bare-metal path does.
+  const cvmPeerPods = useCvmPeerPods();
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -172,20 +176,37 @@ export const EnableConfidentialContainers: FC = () => {
           <ModalHeader title={t('Enable confidential containers')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
-              {t(
-                'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
-              )}
+              {cvmPeerPods
+                ? t(
+                    'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. On this cluster peer pods run in the cloud, so the confidential runtime is kata-remote and your peer-pod VMs become Confidential VMs. Nothing is installed on your worker nodes.',
+                  )
+                : t(
+                    'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
+                  )}
             </p>
-            <Alert
-              variant="warning"
-              isInline
-              title={t('Nodes will reboot')}
-              className="coco-openshift-console-plugin__mb"
-            >
-              {t(
-                'Installing the kata-cc runtime reconfigures and reboots the sandboxed-containers nodes, one at a time.',
-              )}
-            </Alert>
+            {cvmPeerPods ? (
+              <Alert
+                variant="info"
+                isInline
+                title={t('No node reboot')}
+                className="coco-openshift-console-plugin__mb"
+              >
+                {t(
+                  'The kata-remote runtime is already installed and does not reboot your nodes. To make peer pods confidential, set DISABLECVM to "false" and a confidential instance type (Standard_DC*as_v5 for AMD SEV-SNP or Standard_EC*eds_v5 for Intel TDX) in the peer pods config map.',
+                )}
+              </Alert>
+            ) : (
+              <Alert
+                variant="warning"
+                isInline
+                title={t('Nodes will reboot')}
+                className="coco-openshift-console-plugin__mb"
+              >
+                {t(
+                  'Installing the kata-cc runtime reconfigures and reboots the sandboxed-containers nodes, one at a time.',
+                )}
+              </Alert>
+            )}
 
             <p className="coco-openshift-console-plugin__mb">
               {t(

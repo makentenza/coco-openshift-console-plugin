@@ -22,7 +22,7 @@ import { CheckCircleIcon } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useCvmPeerPods, useTeeNodes } from '../k8s/hooks';
+import { useKataConfig, useTeeNodes } from '../k8s/hooks';
 import {
   ConfigMapGVK,
   ConfigMapModel,
@@ -106,10 +106,15 @@ export const EnableConfidentialContainers: FC = () => {
   const cmExists = !!cm;
 
   const { teeNodes, loaded: nodesLoaded } = useTeeNodes();
-  // On a cloud/peer-pods cluster the confidential runtime is kata-remote (the
-  // pod VMs become Confidential VMs); the operator does NOT install kata-cc on
-  // the worker nodes and does NOT reboot them. Only the bare-metal path does.
-  const cvmPeerPods = useCvmPeerPods();
+  const [kataConfig] = useKataConfig();
+  // A peer-pods-only cloud cluster: the confidential runtime is kata-remote (the
+  // pod VMs become Confidential VMs). The operator installs NOTHING on the worker
+  // nodes and does NOT reboot them — on-node kata-cc + reboot only happen on
+  // bare-metal TEE nodes. This holds regardless of DISABLECVM (non-CVM peer pods
+  // still run kata-remote, no reboot). Matches Overview's onNodeTee / the
+  // COCO_ONNODE_TEE flag in flags.ts.
+  const cloudPeerPodsOnly =
+    kataConfig?.spec?.enablePeerPods === true && teeNodes.length === 0;
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -176,7 +181,7 @@ export const EnableConfidentialContainers: FC = () => {
           <ModalHeader title={t('Enable confidential containers')} />
           <ModalBody>
             <p className="coco-openshift-console-plugin__mb">
-              {cvmPeerPods
+              {cloudPeerPodsOnly
                 ? t(
                     'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. On this cluster peer pods run in the cloud, so the confidential runtime is kata-remote and your peer-pod VMs become Confidential VMs. Nothing is installed on your worker nodes.',
                   )
@@ -184,7 +189,7 @@ export const EnableConfidentialContainers: FC = () => {
                     'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
                   )}
             </p>
-            {cvmPeerPods ? (
+            {cloudPeerPodsOnly ? (
               <Alert
                 variant="info"
                 isInline

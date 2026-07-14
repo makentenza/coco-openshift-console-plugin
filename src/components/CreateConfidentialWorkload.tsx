@@ -63,6 +63,8 @@ import {
   StorageClassGVK,
 } from '../k8s/resources';
 import type { ConfigMapKind, NamespaceKind, StorageClassKind } from '../k8s/types';
+import { useCvmPeerPods, useRuntimeClasses } from '../k8s/hooks';
+import { isConfidentialRuntimeClass } from '../utils/runtime';
 import { isValidCdhResourcePath } from '../utils/cdhPath';
 import { fnv1aHex } from '../utils/checksum';
 import { inspectInitdata, isInClusterKbsHost, kbsHostFromUrl } from '../utils/topology';
@@ -71,7 +73,6 @@ import { NamespaceSelect } from './NamespaceSelect';
 import './coco.css';
 
 type Kind = 'Pod' | 'Deployment';
-type RuntimeClass = 'kata-cc' | 'kata-cc-nvidia-gpu';
 
 const IS_DEFAULT_SC_ANNOTATION = 'storageclass.kubernetes.io/is-default-class';
 /** Placeholder shown when no LUKS helper image is supplied — must be replaced by the user. */
@@ -141,8 +142,50 @@ const CreateConfidentialWorkload: FC = () => {
   const [name, setName] = useState('coco-workload');
   const [namespace, setNamespace] = useState('default');
   const [image, setImage] = useState('registry.access.redhat.com/ubi9/ubi:latest');
-  const [runtimeClass, setRuntimeClass] = useState<RuntimeClass>('kata-cc');
+  const [runtimeClass, setRuntimeClass] = useState<string>('kata-cc');
   const [replicas, setReplicas] = useState('1');
+
+  // Runtime class options come from the cluster's actual RuntimeClasses, filtered to
+  // the confidential ones — kata-cc / kata-cc-nvidia-gpu on bare-metal TEE clusters,
+  // and kata-remote on cloud clusters where peer pods run as Confidential VMs. This is
+  // the same isConfidentialRuntimeClass filter the workloads and runtime-class lists
+  // use, so the three views agree and the wizard never offers a class the cluster can't
+  // schedule (e.g. kata-cc on Azure, where only kata-remote exists). See coco #26.
+  const [runtimeClasses] = useRuntimeClasses();
+  const cvmPeerPods = useCvmPeerPods();
+  const runtimeClassOptions = useMemo(() => {
+    const order = ['kata-cc', 'kata-cc-nvidia-gpu', 'kata-remote'];
+    const names = [
+      ...new Set(
+        runtimeClasses
+          .filter((rc) => isConfidentialRuntimeClass(rc, cvmPeerPods))
+          .map((rc) => rc.metadata?.name)
+          .filter(Boolean) as string[],
+      ),
+    ];
+    if (names.length) {
+      return names.sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        return (
+          (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib) || a.localeCompare(b)
+        );
+      });
+    }
+    // Nothing enumerated yet (RuntimeClasses still loading, or CoCo not fully set up):
+    // fall back to a topology-appropriate default so the wizard stays usable and never
+    // shows the bare-metal kata-cc class on a Confidential-VM peer-pods cluster.
+    return cvmPeerPods ? ['kata-remote'] : ['kata-cc', 'kata-cc-nvidia-gpu'];
+  }, [runtimeClasses, cvmPeerPods]);
+
+  // Keep the selection valid as options resolve: if the current pick isn't offered
+  // (e.g. the kata-cc default on an Azure/peer-pods cluster), snap to the first
+  // available class.
+  useEffect(() => {
+    if (runtimeClassOptions.length && !runtimeClassOptions.includes(runtimeClass)) {
+      setRuntimeClass(runtimeClassOptions[0]);
+    }
+  }, [runtimeClassOptions, runtimeClass]);
   // Optional — left empty so the container runs the image's own entrypoint unless the
   // user deliberately overrides it. (Note: many base images, e.g. ubi9, exit immediately
   // without a long-running command such as `sleep infinity`.)
@@ -631,12 +674,26 @@ const CreateConfidentialWorkload: FC = () => {
                   id="cw-rc"
                   value={runtimeClass}
                   onChange={(_e, v) => {
-                    setRuntimeClass(v as RuntimeClass);
+                    setRuntimeClass(v);
                   }}
                 >
-                  <FormSelectOption value="kata-cc" label="kata-cc" />
-                  <FormSelectOption value="kata-cc-nvidia-gpu" label="kata-cc-nvidia-gpu" />
+                  {runtimeClassOptions.map((rc) => (
+                    <FormSelectOption key={rc} value={rc} label={rc} />
+                  ))}
                 </FormSelect>
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      {runtimeClass === 'kata-remote'
+                        ? t(
+                            'kata-remote runs the workload in a Confidential VM peer pod on a separate cloud host — the runtime class for confidential containers on Azure and other cloud deployments.',
+                          )
+                        : t(
+                            'kata-cc runs the workload in a hardware TEE (Intel TDX / AMD SEV-SNP) on a bare-metal confidential node.',
+                          )}
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
               </FormGroup>
               {runtimeClass === 'kata-cc-nvidia-gpu' && (
                 <Alert

@@ -40,7 +40,9 @@ import { classForRuntimeClass, isConfidentialClass } from '../utils/runtime';
 import { cvmPeerPodsEnabled } from '../utils/topology';
 import { teeNode } from '../utils/tee';
 import { podDisplayStatus, podRestartCount } from '../utils/status';
-import { legacyTdxInfraPresent } from '../utils/tdxQuoteGenerationService';
+import { httpStatusCode } from '../utils/error';
+import { summarizeLegacyTdxInfra } from '../utils/tdxQuoteGenerationService';
+import type { LegacyTdxInfraStatus } from '../utils/tdxQuoteGenerationService';
 
 export const useRuntimeClasses = (): [RuntimeClassKind[], boolean] => {
   const [data, loaded] = useK8sWatchResource<RuntimeClassKind[]>({
@@ -108,17 +110,7 @@ export const useCvmPeerPodsStatus = (): [boolean, boolean] => {
     name: PEER_PODS_CM,
   });
 
-  const e = error as
-    | {
-        code?: number | string;
-        status?: number | string;
-        response?: { status?: number };
-      }
-    | undefined;
-
-  const status = Number(e?.code ?? e?.status ?? e?.response?.status);
-
-  const ready = (loaded && !error) || status === 404;
+  const ready = (loaded && !error) || httpStatusCode(error) === 404;
 
   return [cvmPeerPodsEnabled(cm?.data), ready];
 };
@@ -161,11 +153,20 @@ export const useTdxQuoteGenerationService = (): {
 /**
  * Detect the obsolete OSC 1.12 manually deployed PCCS/QGS infrastructure. Those
  * deployments do not work on OSC 1.13+ and conflict with the Intel TDX DCAP
- * Operator, so their presence must warn (and block new installs) — this is
- * detection only; nothing is ever deleted automatically. Watches 404/error
- * harmlessly when the legacy namespace or resources are absent.
+ * Operator, so a confirmed presence must warn (and block new installs) — this is
+ * detection only; nothing is ever deleted automatically.
+ *
+ * The result is a tri-state, because a watch the account is not allowed to make
+ * (403 on the intel-dcap namespace) or one that has not settled yet must not read
+ * as "the legacy infrastructure is absent" — that would un-block a conflicting
+ * install. Only a 404 (namespace/resources confirmed gone) counts as 'absent';
+ * consumers fail closed on 'unknown'. `loaded` distinguishes "still checking"
+ * from "checked, but could not determine".
  */
-export const useLegacyTdxAttestationInfra = (): { present: boolean; loaded: boolean } => {
+export const useLegacyTdxAttestationInfra = (): {
+  status: LegacyTdxInfraStatus;
+  loaded: boolean;
+} => {
   const [pccs, pLoaded, pError] = useK8sWatchResource<DeploymentKind>({
     groupVersionKind: DeploymentGVK,
     name: LEGACY_PCCS_DEPLOYMENT_NAME,
@@ -176,10 +177,10 @@ export const useLegacyTdxAttestationInfra = (): { present: boolean; loaded: bool
     name: LEGACY_QGS_DAEMONSET_NAME,
     namespace: LEGACY_INTEL_DCAP_NAMESPACE,
   });
-  return {
-    present: legacyTdxInfraPresent(pccs, qgs),
-    loaded: (pLoaded || Boolean(pError)) && (qLoaded || Boolean(qError)),
-  };
+  const loaded = (pLoaded || Boolean(pError)) && (qLoaded || Boolean(qError));
+  // Before the watches settle this reports 'unknown' (fail closed); the UI shows
+  // nothing until `loaded` so the caution doesn't flash on every open.
+  return { status: summarizeLegacyTdxInfra(pccs, pError, qgs, qError), loaded };
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {

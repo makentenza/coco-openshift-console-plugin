@@ -292,10 +292,19 @@ const CocoSetup: FC = () => {
                   ? t(
                       'The Intel TDX DCAP operator reconciled the service but scheduled the QGS on zero nodes — no node matches its node selector.',
                     )
-                  : t(
-                      'The Intel TDX DCAP operator is deploying the QGS ({{ready}}/{{desired}} node(s) ready). It completes once the QGS DaemonSet is running on your TDX nodes.',
-                      { ready: tqgs.ready, desired: tqgs.desired },
-                    )
+                  : !tqgs.statusObserved
+                    ? t(
+                        'The Intel TDX DCAP operator has not reported status yet — if this persists, check the operator pod in {{namespace}}.',
+                        { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                      )
+                    : tqgs.staleStatus
+                      ? t(
+                          'The TdxQuoteGenerationService configuration changed — the Intel TDX DCAP operator is re-reconciling the QGS DaemonSet.',
+                        )
+                      : t(
+                          'The Intel TDX DCAP operator is deploying the QGS ({{ready}}/{{desired}} node(s) ready). It completes once the QGS DaemonSet is running on your TDX nodes.',
+                          { ready: tqgs.ready, desired: tqgs.desired },
+                        )
             : tqgsCrdInstalled
               ? t(
                   'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
@@ -303,7 +312,7 @@ const CocoSetup: FC = () => {
               : t(
                   'Attestation needs the host quote-generation stack for your TEE, provided by the Intel TDX DCAP operator — install it from OperatorHub (the guided setup links there) and create its TdxQuoteGenerationService:',
                 )}
-          {legacy.present && (
+          {legacy.status === 'present' && (
             <div className="coco-openshift-console-plugin__mt">
               <strong>
                 {t(
@@ -316,6 +325,13 @@ const CocoSetup: FC = () => {
               <a href={INTEL_DCAP_DOCS_URL} target="_blank" rel="noopener noreferrer">
                 {t('Documentation')}
               </a>
+            </div>
+          )}
+          {legacy.loaded && legacy.status === 'unknown' && (
+            <div className="coco-openshift-console-plugin__mt">
+              {t(
+                'Could not check for the obsolete OpenShift sandboxed containers 1.12 attestation infrastructure (no read access to the intel-dcap namespace). The guided setup stays blocked until it is ruled out — verify manually before deploying.',
+              )}
             </div>
           )}
           <ul className="coco-openshift-console-plugin__mt">

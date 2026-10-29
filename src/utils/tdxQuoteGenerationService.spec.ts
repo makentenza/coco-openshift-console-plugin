@@ -11,6 +11,7 @@ import type {
   DaemonSetKind,
   DeploymentKind,
   NodeKind,
+  SecretKind,
   TdxQuoteGenerationServiceKind,
 } from '../k8s/types';
 import {
@@ -28,11 +29,12 @@ import {
   buildTdxQuoteGenerationService,
   buildTdxSetupManualScript,
   DEFAULT_TQGS_NODE_SELECTOR,
-  legacyTdxInfraPresent,
   NODE_SELECTOR_RE,
   nodesMatchingSelector,
   nodeSelectorValid,
   parseNodeSelector,
+  pcsApiKeySecretValid,
+  summarizeLegacyTdxInfra,
   summarizeTqgs,
   TQGS_MAX_NODE_SELECTORS,
 } from './tdxQuoteGenerationService';
@@ -229,6 +231,81 @@ describe('summarizeTqgs: reconciliation status', () => {
     expect(summary.onlineMode).toBe(false);
     expect(summary.registrationDeploymentName).toBeUndefined();
   });
+
+  it('exposes whether the operator has written a status at all', () => {
+    expect(summarizeTqgs(tqgs()).statusObserved).toBe(false);
+    expect(
+      summarizeTqgs(
+        tqgs({
+          status: { conditions: [condition('Ready', 'False', { reason: 'ServicesNotReady' })] },
+        }),
+      ).statusObserved,
+    ).toBe(true);
+  });
+
+  it('never reports ready from a status written against an older spec generation', () => {
+    // The node selector was just edited (generation bumped to 2); the operator
+    // stamps status.observedGeneration on every patch, so 1 < 2 means the Ready
+    // condition describes the OLD selector — the summary must say "installing".
+    const cr = tqgs({
+      metadata: { name: TQGS_CR_NAME, generation: 2 },
+      status: {
+        conditions: [condition('Ready', 'True', { reason: 'ServicesReady' })],
+        daemonsetName: 'intel-tdx-dcap-qgs',
+        desiredNumberScheduled: 2,
+        currentNumberScheduled: 2,
+        numberReady: 2,
+        observedGeneration: 1,
+      },
+    });
+    const summary = summarizeTqgs(cr);
+    expect(summary.phase).toBe('installing');
+    expect(summary.staleStatus).toBe(true);
+    expect(summary.phase).not.toBe('ready'); // stale verdict, not a live one
+  });
+
+  it('also defers a stale ReconcileFailed to the re-reconcile in flight', () => {
+    const cr = tqgs({
+      metadata: { name: TQGS_CR_NAME, generation: 2 },
+      status: {
+        conditions: [
+          condition('Ready', 'False', { reason: 'ReconcileFailed', message: 'old error' }),
+        ],
+        observedGeneration: 1,
+      },
+    });
+    const summary = summarizeTqgs(cr);
+    expect(summary.phase).toBe('installing');
+    expect(summary.staleStatus).toBe(true);
+  });
+
+  it('reports ready when the status matches the current generation', () => {
+    const cr = tqgs({
+      metadata: { name: TQGS_CR_NAME, generation: 2 },
+      status: {
+        conditions: [condition('Ready', 'True', { reason: 'ServicesReady' })],
+        desiredNumberScheduled: 1,
+        numberReady: 1,
+        observedGeneration: 2,
+      },
+    });
+    const summary = summarizeTqgs(cr);
+    expect(summary.phase).toBe('ready');
+    expect(summary.staleStatus).toBe(false);
+  });
+
+  it('tolerates a missing observedGeneration (older operator) and trusts the condition', () => {
+    const cr = tqgs({
+      status: {
+        conditions: [condition('Ready', 'True', { reason: 'ServicesReady' })],
+        desiredNumberScheduled: 1,
+        numberReady: 1,
+      },
+    });
+    const summary = summarizeTqgs(cr);
+    expect(summary.phase).toBe('ready');
+    expect(summary.staleStatus).toBe(false);
+  });
 });
 
 // ---- 3. PCS API key Secret ----
@@ -348,25 +425,74 @@ describe('RBAC access reviews for the DCAP operator flow', () => {
   });
 });
 
-// ---- 11. legacy (OSC 1.12) infrastructure detection ----
+// ---- 11. legacy (OSC 1.12) infrastructure detection (tri-state, fail closed) ----
 
-describe('legacyTdxInfraPresent', () => {
-  it('is false when neither legacy resource exists', () => {
-    expect(legacyTdxInfraPresent(undefined, undefined)).toBe(false);
-    expect(legacyTdxInfraPresent({}, {})).toBe(false);
+describe('summarizeLegacyTdxInfra', () => {
+  it('reports absent only when both watches returned a confirmed 404', () => {
+    expect(
+      summarizeLegacyTdxInfra(undefined, { code: 404 }, undefined, { response: { status: 404 } }),
+    ).toBe('absent');
   });
 
-  it('detects the legacy PCCS Deployment', () => {
-    expect(legacyTdxInfraPresent(legacyDeployment('pccs'), undefined)).toBe(true);
+  it('detects the legacy PCCS Deployment regardless of the other watch', () => {
+    expect(summarizeLegacyTdxInfra(legacyDeployment('pccs'), undefined, undefined, undefined)).toBe(
+      'present',
+    );
+    expect(
+      summarizeLegacyTdxInfra(legacyDeployment('pccs'), undefined, undefined, { code: 404 }),
+    ).toBe('present');
   });
 
-  it('detects the legacy tdx-qgs DaemonSet', () => {
-    expect(legacyTdxInfraPresent(undefined, legacyDaemonSet('tdx-qgs'))).toBe(true);
+  it('detects the legacy tdx-qgs DaemonSet regardless of the other watch', () => {
+    expect(
+      summarizeLegacyTdxInfra(undefined, { code: 404 }, legacyDaemonSet('tdx-qgs'), undefined),
+    ).toBe('present');
   });
 
-  it('detects either resource independently of the other', () => {
-    expect(legacyTdxInfraPresent(legacyDeployment('pccs'), legacyDaemonSet('tdx-qgs'))).toBe(true);
-    expect(legacyTdxInfraPresent(legacyDeployment('other'), undefined)).toBe(true);
+  it('never reads a permission failure (403) as absence', () => {
+    expect(summarizeLegacyTdxInfra(undefined, { code: 403 }, undefined, { code: 404 })).toBe(
+      'unknown',
+    );
+    expect(summarizeLegacyTdxInfra(undefined, { code: 404 }, undefined, { code: 403 })).toBe(
+      'unknown',
+    );
+  });
+
+  it('never reads an unparseable or server error as absence', () => {
+    expect(summarizeLegacyTdxInfra(undefined, new Error('network'), undefined, { code: 404 })).toBe(
+      'unknown',
+    );
+    expect(summarizeLegacyTdxInfra(undefined, { code: 500 }, undefined, { code: 404 })).toBe(
+      'unknown',
+    );
+  });
+
+  it('treats an unsettled watch (no object, no error) as unknown, not absent', () => {
+    expect(summarizeLegacyTdxInfra(undefined, undefined, undefined, undefined)).toBe('unknown');
+    expect(summarizeLegacyTdxInfra(undefined, { code: 404 }, undefined, undefined)).toBe('unknown');
+  });
+});
+
+// ---- existing PCS API key Secret shape (existence alone is not configuration) ----
+
+describe('pcsApiKeySecretValid', () => {
+  const secret = (data?: Record<string, string>): SecretKind => ({
+    metadata: { name: TQGS_PCS_API_KEY_SECRET_NAME, namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+    data,
+  });
+
+  it('accepts a Secret carrying the api-key data key', () => {
+    expect(pcsApiKeySecretValid(secret({ 'api-key': 'bm90LXRoZS1yZWFsLWtleQ==' }))).toBe(true);
+  });
+
+  it('rejects a Secret that exists but lacks the api-key data key', () => {
+    expect(pcsApiKeySecretValid(secret({ 'other-key': 'eA==' }))).toBe(false);
+    expect(pcsApiKeySecretValid(secret({}))).toBe(false);
+  });
+
+  it('rejects an absent Secret', () => {
+    expect(pcsApiKeySecretValid(undefined)).toBe(false);
+    expect(pcsApiKeySecretValid(secret(undefined))).toBe(false);
   });
 });
 

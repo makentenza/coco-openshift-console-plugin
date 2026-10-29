@@ -2,6 +2,7 @@ import type {
   DaemonSetKind,
   DeploymentKind,
   NodeKind,
+  SecretKind,
   TdxQuoteGenerationServiceKind,
 } from '../k8s/types';
 import {
@@ -10,6 +11,7 @@ import {
   TQGS_PCS_API_KEY_SECRET_KEY,
   TQGS_PCS_API_KEY_SECRET_NAME,
 } from '../k8s/resources';
+import { httpStatusCode } from './error';
 import { SGX_LABEL } from './tee';
 
 /**
@@ -93,6 +95,14 @@ export interface TqgsSummary {
   onlineMode: boolean;
   /** True once the operator reconciled and found zero nodes matching the selector. */
   zeroNodes: boolean;
+  /** The operator has written a status at all (false = it has never reported). */
+  statusObserved: boolean;
+  /**
+   * The status was written against an older spec generation (e.g. the node
+   * selector was just edited) — its Ready condition no longer describes the
+   * current desired state, so readiness must not be reported from it.
+   */
+  staleStatus: boolean;
   /** Human-readable message from the Ready condition (when present). */
   message?: string;
   /** Reason from the Ready condition (ServicesReady / ServicesNotReady / ReconcileFailed). */
@@ -106,12 +116,15 @@ const emptySummary = (): TqgsSummary => ({
   ready: 0,
   onlineMode: false,
   zeroNodes: false,
+  statusObserved: false,
+  staleStatus: false,
 });
 
 /**
  * Reduce a (possibly absent) TdxQuoteGenerationService to a UI state. Distinguishes
  * a missing operator (CRD), a missing CR, in-progress reconciliation, readiness
- * and reconciliation failure — never reporting ready on CR existence alone.
+ * and reconciliation failure — never reporting ready on CR existence alone, and
+ * never from a status the operator wrote against an older spec generation.
  */
 export const summarizeTqgs = (
   cr?: TdxQuoteGenerationServiceKind,
@@ -123,6 +136,14 @@ export const summarizeTqgs = (
   const status = cr.status;
   const desired = status?.desiredNumberScheduled ?? 0;
   const ready = status?.numberReady ?? 0;
+  // The operator stamps status.observedGeneration with metadata.generation on
+  // every status patch (controller.rs). A lower value means the status predates
+  // the current spec — usually a just-edited node selector — so its Ready
+  // condition may no longer hold. An absent observedGeneration (older operator)
+  // is tolerated: the condition is trusted as before.
+  const generation = cr.metadata.generation ?? 1;
+  const observed = status?.observedGeneration;
+  const staleStatus = observed !== undefined && generation > observed;
   const base: TqgsSummary = {
     phase: 'installing',
     desired,
@@ -135,7 +156,10 @@ export const summarizeTqgs = (
     // A reconciled CR that scheduled zero daemon pods means no node matches the
     // node selector (or none is eligible) — never a false "ready".
     zeroNodes: status !== undefined && desired === 0,
+    statusObserved: status !== undefined,
+    staleStatus,
   };
+  if (staleStatus) return base; // re-reconcile in flight — old verdicts don't apply
 
   const cond = (status?.conditions ?? []).find((c) => c.type === 'Ready');
   if (!cond) return base;
@@ -149,13 +173,54 @@ export const summarizeTqgs = (
 // ---- legacy (OSC 1.12) infrastructure detection ----
 
 /**
- * Do OSC 1.12-era manually deployed PCCS/QGS resources exist? Those deployments
+ * Outcome of checking for the OSC 1.12-era manually deployed PCCS/QGS resources.
+ * 'unknown' is deliberately distinct from 'absent': a watch the account is not
+ * allowed to make (403) or that failed for any other reason must never read as
+ * "the legacy infrastructure is not there" — that would un-block a conflicting
+ * install. Consumers fail closed on anything but a confirmed 'absent'.
+ */
+export type LegacyTdxInfraStatus = 'present' | 'absent' | 'unknown';
+
+/** Classify one legacy-resource watch (object wins; 404 = confirmed absent). */
+const legacyWatchStatus = (
+  obj: DeploymentKind | DaemonSetKind | undefined,
+  error: unknown,
+): LegacyTdxInfraStatus => {
+  if (obj?.metadata?.name) return 'present';
+  if (error === undefined) return 'unknown'; // still loading — fail closed
+  return httpStatusCode(error) === 404 ? 'absent' : 'unknown';
+};
+
+/**
+ * Tri-state detection of the obsolete OSC 1.12 PCCS/QGS stack. Those deployments
  * do not work on OSC 1.13+ and must be removed (plus an SGX Factory Reset in the
  * BIOS) before the Intel TDX DCAP Operator is installed — so the UI warns and
- * blocks conflicting installs, but never deletes anything itself.
+ * blocks conflicting installs, but never deletes anything itself. A permission
+ * failure or an in-flight watch yields 'unknown', never a false 'absent'.
  */
-export const legacyTdxInfraPresent = (pccs?: DeploymentKind, qgs?: DaemonSetKind): boolean =>
-  Boolean(pccs?.metadata?.name) || Boolean(qgs?.metadata?.name);
+export const summarizeLegacyTdxInfra = (
+  pccs?: DeploymentKind,
+  pccsError?: unknown,
+  qgs?: DaemonSetKind,
+  qgsError?: unknown,
+): LegacyTdxInfraStatus => {
+  const pccsStatus = legacyWatchStatus(pccs, pccsError);
+  const qgsStatus = legacyWatchStatus(qgs, qgsError);
+  if (pccsStatus === 'present' || qgsStatus === 'present') return 'present';
+  if (pccsStatus === 'unknown' || qgsStatus === 'unknown') return 'unknown';
+  return 'absent';
+};
+
+// ---- PCS API key Secret ----
+
+/**
+ * Does an existing PCS API key Secret carry the data key the operator's registrar
+ * reads? Existence alone is not enough — a Secret missing the `api-key` key makes
+ * the registrar run without a key and platform registration fail. Only key
+ * *names* are inspected; the value is never read, decoded or displayed.
+ */
+export const pcsApiKeySecretValid = (secret?: SecretKind): boolean =>
+  Boolean(secret?.metadata?.name && secret.data && TQGS_PCS_API_KEY_SECRET_KEY in secret.data);
 
 // ---- manifest builders ----
 

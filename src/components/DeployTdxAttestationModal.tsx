@@ -64,6 +64,7 @@ import {
   DEFAULT_TQGS_NODE_SELECTOR,
   nodesMatchingSelector,
   nodeSelectorValid,
+  pcsApiKeySecretValid,
   summarizeTqgs,
 } from '../utils/tdxQuoteGenerationService';
 import { InstallSgxDevicePlugin } from './InstallSgxDevicePlugin';
@@ -169,8 +170,9 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const summary = summarizeTqgs(cr, crdInstalled);
   const crExists = Boolean(cr?.metadata);
 
-  // The Intel PCS API key Secret the operator's registrar reads (existence only —
-  // the key value is never read back or displayed).
+  // The Intel PCS API key Secret the operator's registrar reads. Only its shape
+  // is inspected — the key value is never read back or displayed — and a Secret
+  // that exists but lacks the api-key data key does not count as configured.
   const [pcsSecret] = useK8sWatchResource<SecretKind>(
     crdInstalled
       ? {
@@ -181,11 +183,15 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
       : null,
   ) as [SecretKind | undefined, boolean, unknown];
   const secretPresent = Boolean(pcsSecret?.metadata?.name);
+  const secretValid = pcsApiKeySecretValid(pcsSecret);
+  // With a present-but-malformed Secret, typing a new key cannot help (an
+  // existing Secret is never overwritten from here), so it must be fixed first.
+  const valid = secretPresent ? secretValid : apiKey.trim() !== '';
 
-  // Obsolete OSC 1.12 infrastructure — blocks the new installation.
+  // Obsolete OSC 1.12 infrastructure — blocks the new installation. 'unknown'
+  // (e.g. no read access to the legacy intel-dcap namespace) blocks too: the
+  // wizard must not deploy alongside a legacy stack it failed to rule out.
   const legacy = useLegacyTdxAttestationInfra();
-
-  const valid = secretPresent || apiKey.trim() !== '';
   const prereqsMet = tdxNodeCount > 0 && sgxCapableOk && sgxPluginReady;
 
   const onDeploy = async () => {
@@ -225,7 +231,13 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
 
   // ProgressStepper variants for the rollout phases.
   const applyVariant = error ? 'danger' : crExists ? 'success' : started ? 'info' : 'pending';
-  const secretVariant = secretPresent ? 'success' : started ? 'info' : 'pending';
+  const secretVariant = secretValid
+    ? 'success'
+    : secretPresent
+      ? 'warning'
+      : started
+        ? 'info'
+        : 'pending';
   const qgsVariant =
     summary.phase === 'failed'
       ? 'danger'
@@ -294,7 +306,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
           )}
         </Alert>
 
-        {legacy.present && (
+        {legacy.status === 'present' && (
           <Alert
             variant="danger"
             isInline
@@ -322,6 +334,20 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                 {t('Migration procedure in the documentation')}
               </Button>
             </div>
+          </Alert>
+        )}
+        {legacy.loaded && legacy.status === 'unknown' && (
+          <Alert
+            variant="warning"
+            isInline
+            title={t('Could not check for obsolete attestation infrastructure')}
+            className={`${PREFIX}__mb`}
+          >
+            <p>
+              {t(
+                'The plugin cannot determine whether the OpenShift sandboxed containers 1.12 PCCS/QGS stack is still deployed — typically because this account is not allowed to read the intel-dcap namespace. Deploying is blocked until that is ruled out, because the two setups conflict. Verify manually (for example: oc get deployment pccs -n intel-dcap and oc get daemonset tdx-qgs -n intel-dcap), and grant read access to the namespace if you manage this account.',
+              )}
+            </p>
           </Alert>
         )}
 
@@ -414,20 +440,38 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
         <Form>
           <FormGroup label={t('Intel PCS API key')} isRequired fieldId="pccs-api-key">
             {secretPresent ? (
-              <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapSm' }}>
-                <FlexItem>
-                  <CheckCircleIcon className={`${PREFIX}__icon-success`} />
-                </FlexItem>
-                <FlexItem>
-                  {t('Configured — the operator reads the key from')}{' '}
-                  <ResourceLink
-                    groupVersionKind={SecretGVK}
-                    name={TQGS_PCS_API_KEY_SECRET_NAME}
-                    namespace={INTEL_DCAP_OPERATOR_NAMESPACE}
-                    inline
-                  />
-                </FlexItem>
-              </Flex>
+              secretValid ? (
+                <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapSm' }}>
+                  <FlexItem>
+                    <CheckCircleIcon className={`${PREFIX}__icon-success`} />
+                  </FlexItem>
+                  <FlexItem>
+                    {t('Configured — the operator reads the key from')}{' '}
+                    <ResourceLink
+                      groupVersionKind={SecretGVK}
+                      name={TQGS_PCS_API_KEY_SECRET_NAME}
+                      namespace={INTEL_DCAP_OPERATOR_NAMESPACE}
+                      inline
+                    />
+                  </FlexItem>
+                </Flex>
+              ) : (
+                <Alert
+                  variant="warning"
+                  isInline
+                  title={t('The existing Secret is missing the api-key data key')}
+                >
+                  <p>
+                    {t(
+                      'The Secret exists but does not carry the api-key data key the operator reads, so platform registration would run without your Intel PCS API key. This wizard never overwrites an existing Secret — update it manually, for example: oc -n {{namespace}} create secret generic {{secret}} --from-literal=api-key="<API_KEY_VALUE>" --dry-run=client -o yaml | oc apply -f -',
+                      {
+                        namespace: INTEL_DCAP_OPERATOR_NAMESPACE,
+                        secret: TQGS_PCS_API_KEY_SECRET_NAME,
+                      },
+                    )}
+                  </p>
+                </Alert>
+              )
             ) : (
               <>
                 <TextInput
@@ -566,9 +610,13 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                 titleId="step-secret-title"
                 aria-label={t('PCS API key Secret')}
                 description={
-                  secretPresent
+                  secretValid
                     ? t('The operator can read the Intel PCS API key.')
-                    : t('Created together with the custom resource.')
+                    : secretPresent
+                      ? t(
+                          'The existing Secret is missing the api-key data key — see the warning above.',
+                        )
+                      : t('Created together with the custom resource.')
                 }
               >
                 {t('PCS API key Secret')}
@@ -588,12 +636,21 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                       ? t(
                           'The operator reports zero scheduled QGS pods — no node matches the node selector.',
                         )
-                      : crExists
-                        ? t('Rolling out: {{ready}}/{{desired}} node(s) ready.', {
-                            ready: summary.ready,
-                            desired: summary.desired,
-                          })
-                        : t('Runs on each selected node once the custom resource is created.')
+                      : !summary.statusObserved
+                        ? t(
+                            'Waiting for the Intel TDX DCAP operator to report status — if this persists, check the operator pod in {{namespace}}.',
+                            { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                          )
+                        : summary.staleStatus
+                          ? t(
+                              'Configuration changed — the operator is re-reconciling the QGS DaemonSet.',
+                            )
+                          : crExists
+                            ? t('Rolling out: {{ready}}/{{desired}} node(s) ready.', {
+                                ready: summary.ready,
+                                desired: summary.desired,
+                              })
+                            : t('Runs on each selected node once the custom resource is created.')
                 }
               >
                 {t('QGS quote service running')}
@@ -678,7 +735,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                 !valid ||
                 !selectorOk ||
                 !crdInstalled ||
-                legacy.present ||
+                legacy.status !== 'absent' ||
                 busy ||
                 deploying ||
                 tqgsRbacLoading ||

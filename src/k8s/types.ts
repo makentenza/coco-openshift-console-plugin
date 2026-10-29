@@ -178,23 +178,6 @@ export type TdxQuoteGenerationServiceKind = K8sResourceCommon & {
   };
 };
 
-/** A batch/v1 Job — we watch .status to drive automation progress. */
-export type JobKind = K8sResourceCommon & {
-  spec?: {
-    backoffLimit?: number;
-    template?: {
-      metadata?: Record<string, unknown>;
-      spec?: Record<string, unknown>;
-    };
-  };
-  status?: {
-    active?: number;
-    succeeded?: number;
-    failed?: number;
-    conditions?: { type: string; status: string; reason?: string; message?: string }[];
-  };
-};
-
 /**
  * machineconfiguration.openshift.io/v1 MachineConfigPool — we read the role label
  * (to match a pool to the TDX-host MachineConfig), the rollout conditions

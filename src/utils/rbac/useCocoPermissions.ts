@@ -5,7 +5,6 @@ import {
   KataConfigModel,
   MachineConfigModel,
   NodeFeatureRuleModel,
-  JobModel,
   PodModel,
   DeploymentModel,
   NamespaceModel,
@@ -28,9 +27,6 @@ export const useCanCreateMachineConfig = () =>
 
 export const useCanCreateNodeFeatureRule = () =>
   useAccessReview({ ...asAccessReview(NodeFeatureRuleModel, 'create', 'openshift-nfd') });
-
-export const useCanCreateJob = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(JobModel, 'create', namespace) });
 
 /**
  * Can the user create the cluster-scoped TdxQuoteGenerationService singleton

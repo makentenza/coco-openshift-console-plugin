@@ -1,8 +1,12 @@
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
 import {
   CC_INIT_DATA_ANNOTATION,
   ConfigMapGVK,
+  CustomResourceDefinitionGVK,
+  DaemonSetGVK,
+  DeploymentGVK,
   InfrastructureGVK,
   KataConfigGVK,
   NodeGVK,
@@ -11,22 +15,32 @@ import {
   PEER_PODS_CM,
   PodGVK,
   RuntimeClassGVK,
+  LEGACY_INTEL_DCAP_NAMESPACE,
+  LEGACY_PCCS_DEPLOYMENT_NAME,
+  LEGACY_QGS_DAEMONSET_NAME,
+  TQGS_CRD_NAME,
+  TQGS_CR_NAME,
+  TdxQuoteGenerationServiceGVK,
 } from './resources';
 import type {
   CcClass,
   CcWorkload,
   ConfigMapKind,
+  DaemonSetKind,
+  DeploymentKind,
   InfrastructureKind,
   KataConfigKind,
   NodeKind,
   PodKind,
   RuntimeClassKind,
   TeeNode,
+  TdxQuoteGenerationServiceKind,
 } from './types';
 import { classForRuntimeClass, isConfidentialClass } from '../utils/runtime';
 import { cvmPeerPodsEnabled } from '../utils/topology';
 import { teeNode } from '../utils/tee';
 import { podDisplayStatus, podRestartCount } from '../utils/status';
+import { legacyTdxInfraPresent } from '../utils/tdxQuoteGenerationService';
 
 export const useRuntimeClasses = (): [RuntimeClassKind[], boolean] => {
   const [data, loaded] = useK8sWatchResource<RuntimeClassKind[]>({
@@ -115,6 +129,57 @@ export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
     name: 'cluster',
   });
   return [infra?.status?.platformStatus?.type ?? infra?.status?.platform, loaded];
+};
+
+/**
+ * The Intel TDX DCAP operator's TdxQuoteGenerationService singleton, plus whether
+ * the operator is installed at all. The CRD is watched first: watching the CR
+ * before its CRD exists only produces 404 noise, and `crdInstalled` is itself the
+ * "operator installed" signal for the setup checklist. Named-resource watches 404
+ * silently when the CR is absent; we only read status.
+ */
+export const useTdxQuoteGenerationService = (): {
+  cr: TdxQuoteGenerationServiceKind | undefined;
+  crdInstalled: boolean;
+  loaded: boolean;
+} => {
+  const [crd, crdLoaded, crdError] = useK8sWatchResource<K8sResourceCommon>({
+    groupVersionKind: CustomResourceDefinitionGVK,
+    name: TQGS_CRD_NAME,
+  });
+  const crdInstalled = Boolean(crd?.metadata?.name);
+  const [cr, crLoaded, crError] = useK8sWatchResource<TdxQuoteGenerationServiceKind>(
+    crdInstalled ? { groupVersionKind: TdxQuoteGenerationServiceGVK, name: TQGS_CR_NAME } : null,
+  );
+  // A named watch that 404s (CR absent — the normal pre-setup state) or is denied
+  // never flips `loaded`; settle once loaded OR errored so consumers don't spin.
+  const settled =
+    (crdLoaded || Boolean(crdError)) && (!crdInstalled || crLoaded || Boolean(crError));
+  return { cr: crdInstalled ? cr : undefined, crdInstalled, loaded: settled };
+};
+
+/**
+ * Detect the obsolete OSC 1.12 manually deployed PCCS/QGS infrastructure. Those
+ * deployments do not work on OSC 1.13+ and conflict with the Intel TDX DCAP
+ * Operator, so their presence must warn (and block new installs) — this is
+ * detection only; nothing is ever deleted automatically. Watches 404/error
+ * harmlessly when the legacy namespace or resources are absent.
+ */
+export const useLegacyTdxAttestationInfra = (): { present: boolean; loaded: boolean } => {
+  const [pccs, pLoaded, pError] = useK8sWatchResource<DeploymentKind>({
+    groupVersionKind: DeploymentGVK,
+    name: LEGACY_PCCS_DEPLOYMENT_NAME,
+    namespace: LEGACY_INTEL_DCAP_NAMESPACE,
+  });
+  const [qgs, qLoaded, qError] = useK8sWatchResource<DaemonSetKind>({
+    groupVersionKind: DaemonSetGVK,
+    name: LEGACY_QGS_DAEMONSET_NAME,
+    namespace: LEGACY_INTEL_DCAP_NAMESPACE,
+  });
+  return {
+    present: legacyTdxInfraPresent(pccs, qgs),
+    loaded: (pLoaded || Boolean(pError)) && (qLoaded || Boolean(qError)),
+  };
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {

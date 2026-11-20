@@ -485,6 +485,13 @@ describe('pcsApiKeySecretValid', () => {
     expect(pcsApiKeySecretValid(secret({ 'api-key': 'bm90LXRoZS1yZWFsLWtleQ==' }))).toBe(true);
   });
 
+  it('accepts a keyless Secret — an empty api-key value still counts as configured', () => {
+    // Keyless PCS provisioning: the Secret carries the api-key data key with an
+    // empty value. Only key names are inspected, so the wizard must treat this
+    // as configured and never demand a fresh API key for it.
+    expect(pcsApiKeySecretValid(secret({ 'api-key': '' }))).toBe(true);
+  });
+
   it('rejects a Secret that exists but lacks the api-key data key', () => {
     expect(pcsApiKeySecretValid(secret({ 'other-key': 'eA==' }))).toBe(false);
     expect(pcsApiKeySecretValid(secret({}))).toBe(false);

@@ -142,3 +142,56 @@ test('granted permissions with legacy ABSENT and CRD absent still block Deploy',
   expect(countOccurrences(markup, 'You do not have permission to perform this action')).toBe(0);
   expect(deployButton(markup).disabled).toBe(true);
 });
+
+// A reconciled TdxQuoteGenerationService exactly as the operator writes it:
+// Ready=True (ServicesReady) against the current generation, Online mode,
+// QGS DaemonSet 1/1. This is the "infrastructure already deployed" state the
+// wizard must recognize without demanding anything from the user.
+const READY_TQGS_CR = {
+  apiVersion: 'trustedservices.intel.com/v1',
+  kind: 'TdxQuoteGenerationService',
+  metadata: { name: 'intel-tdx-dcap', generation: 1 },
+  spec: {
+    platformRegistration: { Online: {} },
+    nodeSelector: ['intel.feature.node.kubernetes.io/sgx=true'],
+  },
+  status: {
+    conditions: [{ type: 'Ready', status: 'True', reason: 'ServicesReady' }],
+    daemonsetName: 'intel-tdx-dcap-qgs',
+    registrationDeploymentName: 'intel-tdx-dcap-registrar',
+    registrationDeploymentReady: true,
+    desiredNumberScheduled: 1,
+    currentNumberScheduled: 1,
+    numberReady: 1,
+    observedGeneration: 1,
+  },
+};
+
+// The keyless PCS configuration already working on the cluster: the Secret
+// carries the api-key data key with an EMPTY value. Only the key name is
+// inspected, so this counts as configured.
+const KEYLESS_PCS_SECRET = {
+  metadata: { name: 'intel-pcs-api-key', namespace: 'intel-dcap-operator-system' },
+  data: { 'api-key': '' },
+};
+
+test('existing ready TQGS with a keyless PCS Secret is recognized — no API key demanded', () => {
+  legacy.mockReturnValue({ loaded: true, status: 'absent' });
+  review.mockReturnValue([true, false]);
+  tqgs.mockReturnValue({ cr: READY_TQGS_CR, crdInstalled: true });
+  watch.mockImplementation((opts: { isList?: boolean }) =>
+    opts?.isList ? [[TDX_NODE], true, undefined] : [KEYLESS_PCS_SECRET, true, undefined],
+  );
+  const markup = renderModal();
+
+  // The deployed-and-running success state, with the live QGS counts.
+  expect(markup).toContain('Attestation infrastructure is deployed and running');
+  expect(markup).toContain('1/1');
+  // The keyless Secret counts as configured — no API-key input is rendered.
+  expect(markup).toContain('Configured — the operator reads the key from');
+  expect(markup).not.toContain('Paste your Provisioning Certification Service API key');
+  expect(markup).not.toContain('The existing Secret is missing the api-key data key');
+  // Ready ⇒ the footer offers Done; there is no Deploy button to press.
+  expect(deployButton(markup).tag).toBe('<not found>');
+  expect(markup).toContain('Done');
+});

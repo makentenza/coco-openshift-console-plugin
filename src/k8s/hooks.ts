@@ -133,6 +133,10 @@ export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
 export const useTdxQuoteGenerationService = (): {
   cr: TdxQuoteGenerationServiceKind | undefined;
   crdInstalled: boolean;
+  /** CRD watch returned 403 — cannot determine whether the operator is installed. */
+  crdAccessDenied: boolean;
+  /** CR watch returned 403 — cannot determine whether the TdxQuoteGenerationService exists. */
+  crAccessDenied: boolean;
   loaded: boolean;
 } => {
   const [crd, crdLoaded, crdError] = useK8sWatchResource<K8sResourceCommon>({
@@ -140,14 +144,25 @@ export const useTdxQuoteGenerationService = (): {
     name: TQGS_CRD_NAME,
   });
   const crdInstalled = Boolean(crd?.metadata?.name);
+  const crdAccessDenied = !crdInstalled && httpStatusCode(crdError) === 403;
   const [cr, crLoaded, crError] = useK8sWatchResource<TdxQuoteGenerationServiceKind>(
     crdInstalled ? { groupVersionKind: TdxQuoteGenerationServiceGVK, name: TQGS_CR_NAME } : null,
   );
+  // A 403 on the CR watch must not read as "the CR does not exist" — it means
+  // the account cannot determine whether the attestation infrastructure is
+  // deployed, which consumers surface instead of offering a fresh setup.
+  const crAccessDenied = crdInstalled && !cr?.metadata?.name && httpStatusCode(crError) === 403;
   // A named watch that 404s (CR absent — the normal pre-setup state) or is denied
   // never flips `loaded`; settle once loaded OR errored so consumers don't spin.
   const settled =
     (crdLoaded || Boolean(crdError)) && (!crdInstalled || crLoaded || Boolean(crError));
-  return { cr: crdInstalled ? cr : undefined, crdInstalled, loaded: settled };
+  return {
+    cr: crdInstalled ? cr : undefined,
+    crdInstalled,
+    crdAccessDenied,
+    crAccessDenied,
+    loaded: settled,
+  };
 };
 
 /**

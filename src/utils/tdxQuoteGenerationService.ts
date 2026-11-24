@@ -222,6 +222,36 @@ export const summarizeLegacyTdxInfra = (
 export const pcsApiKeySecretValid = (secret?: SecretKind): boolean =>
   Boolean(secret?.metadata?.name && secret.data && TQGS_PCS_API_KEY_SECRET_KEY in secret.data);
 
+/**
+ * What the guided setup knows about the Intel PCS API key Secret. The Secret
+ * watch only starts once the operator CRD is established, so an unstarted or
+ * unsettled watch must never read as absence — only a 404 confirms the Secret
+ * is not there; 403 and any other read failure stay fail-closed.
+ */
+export type PcsSecretWatchState =
+  | 'unwatched' // watch never started — operator installation undetermined
+  | 'loading' // watch started, not settled yet
+  | 'forbidden' // 403 — cannot verify
+  | 'absent' // 404 — confirmed not present
+  | 'error' // any other read failure — fail closed
+  | 'invalid' // present but missing the api-key data key
+  | 'valid'; // present and carries the api-key data key (keyless counts)
+
+/** Classify the PCS API key Secret watch into the state above. */
+export const pcsSecretWatchState = (
+  watched: boolean,
+  secret?: SecretKind,
+  error?: unknown,
+): PcsSecretWatchState => {
+  if (secret?.metadata?.name) return pcsApiKeySecretValid(secret) ? 'valid' : 'invalid';
+  if (!watched) return 'unwatched';
+  if (error === undefined) return 'loading';
+  const code = httpStatusCode(error);
+  if (code === 403) return 'forbidden';
+  if (code === 404) return 'absent';
+  return 'error';
+};
+
 // ---- manifest builders ----
 
 /**

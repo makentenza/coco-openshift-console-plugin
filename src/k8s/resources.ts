@@ -213,6 +213,17 @@ export const DeploymentModel: K8sModel = {
   labelPlural: 'Deployments',
 };
 
+export const DaemonSetModel: K8sModel = {
+  apiVersion: 'v1',
+  apiGroup: 'apps',
+  kind: 'DaemonSet',
+  plural: 'daemonsets',
+  namespaced: true,
+  abbr: 'DS',
+  label: 'DaemonSet',
+  labelPlural: 'DaemonSets',
+};
+
 export const ConfigMapModel: K8sModel = {
   apiVersion: 'v1',
   kind: 'ConfigMap',

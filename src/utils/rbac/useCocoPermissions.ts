@@ -35,6 +35,10 @@ export const useCanCreateNodeFeatureRule = () =>
 export const useCanCreateTqgs = () =>
   useAccessReview({ ...asAccessReview(TdxQuoteGenerationServiceModel, 'create') });
 
+/** Can the user patch the existing TdxQuoteGenerationService (reconfigure flow)? */
+export const useCanPatchTqgs = () =>
+  useAccessReview({ ...asAccessReview(TdxQuoteGenerationServiceModel, 'patch') });
+
 /** Can the user create the Intel PCS API key Secret (in the operator namespace)? */
 export const useCanCreateDcapSecret = (namespace: string) =>
   useAccessReview({ ...asAccessReview(SecretModel, 'create', namespace) });

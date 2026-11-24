@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   k8sCreate,
+  k8sGet,
+  k8sPatch,
   ResourceLink,
   useK8sWatchResource,
 } from '@openshift-console/dynamic-plugin-sdk';
@@ -38,12 +40,17 @@ import {
 } from '@patternfly/react-icons';
 import {
   DaemonSetGVK,
+  DaemonSetModel,
   DeploymentGVK,
+  DeploymentModel,
   INTEL_DCAP_DOCS_URL,
   INTEL_DCAP_OPERATORHUB_SEARCH,
   INTEL_DCAP_OPERATOR_NAME,
   INTEL_DCAP_OPERATOR_NAMESPACE,
   INTEL_PCS_PORTAL_URL,
+  LEGACY_INTEL_DCAP_NAMESPACE,
+  LEGACY_PCCS_DEPLOYMENT_NAME,
+  LEGACY_QGS_DAEMONSET_NAME,
   NodeGVK,
   SecretGVK,
   SecretModel,
@@ -53,9 +60,14 @@ import {
   TQGS_PCS_API_KEY_SECRET_NAME,
 } from '../k8s/resources';
 import { useLegacyTdxAttestationInfra, useTdxQuoteGenerationService } from '../k8s/hooks';
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import type { NodeKind, SecretKind } from '../k8s/types';
 import { PermissionHint } from '../utils/rbac/PermissionHint';
-import { useCanCreateDcapSecret, useCanCreateTqgs } from '../utils/rbac/useCocoPermissions';
+import {
+  useCanCreateDcapSecret,
+  useCanCreateTqgs,
+  useCanPatchTqgs,
+} from '../utils/rbac/useCocoPermissions';
 import { sgxCapable, sgxDevicePluginReady, TDX_LABEL } from '../utils/tee';
 import {
   buildPcsApiKeySecret,
@@ -64,8 +76,10 @@ import {
   DEFAULT_TQGS_NODE_SELECTOR,
   nodesMatchingSelector,
   nodeSelectorValid,
-  pcsApiKeySecretValid,
+  pcsSecretWatchState,
+  summarizeLegacyTdxInfra,
   summarizeTqgs,
+  type LegacyTdxInfraStatus,
 } from '../utils/tdxQuoteGenerationService';
 import { InstallSgxDevicePlugin } from './InstallSgxDevicePlugin';
 import './coco.css';
@@ -74,6 +88,51 @@ const PREFIX = 'coco-openshift-console-plugin';
 
 const isAlreadyExists = (e: unknown): boolean =>
   /already exists|alreadyexists|conflict|409/i.test(e instanceof Error ? e.message : String(e));
+
+/** A fresh legacy recheck: its result, plus the (possibly stale) watch value it
+ *  overrides. The recheck keeps winning while the watch still shows the value
+ *  it overrode; once the watch moves — catches up, or reports something new —
+ *  the watch is trusted again. */
+export interface LegacyRecheck {
+  status: LegacyTdxInfraStatus;
+  staleWatch: LegacyTdxInfraStatus;
+}
+
+/** Effective legacy-infrastructure state: a fresh recheck beats a stale watch. */
+export const effectiveLegacyStatus = (
+  watchStatus: LegacyTdxInfraStatus,
+  recheck: LegacyRecheck | null,
+): LegacyTdxInfraStatus => (watchStatus === recheck?.staleWatch ? recheck.status : watchStatus);
+
+/** Fresh one-shot GET of one legacy resource. Classified with the same
+ *  semantics as the watch: an object that still exists — including one with a
+ *  deletionTimestamp, i.e. terminating — counts as present; only a 404 confirms
+ *  absence; permission errors and network failures stay fail-closed. */
+const getLegacyResource = async (
+  model: Parameters<typeof k8sGet>[0]['model'],
+  name: string,
+): Promise<[K8sResourceCommon | undefined, unknown]> => {
+  try {
+    const obj = await k8sGet({ model, name, ns: LEGACY_INTEL_DCAP_NAMESPACE });
+    return [obj, undefined];
+  } catch (e) {
+    return [undefined, e];
+  }
+};
+
+/**
+ * Fresh recheck of the obsolete OSC 1.12 PCCS/QGS stack. The watches can lag
+ * behind cluster-side cleanup (e.g. a missed delete event during namespace
+ * termination), so this re-reads both resources on demand and classifies the
+ * result with `summarizeLegacyTdxInfra` — the same fail-closed semantics.
+ */
+export const recheckLegacyTdxInfra = async (): Promise<LegacyTdxInfraStatus> => {
+  const [[pccs, pccsError], [qgs, qgsError]] = await Promise.all([
+    getLegacyResource(DeploymentModel, LEGACY_PCCS_DEPLOYMENT_NAME),
+    getLegacyResource(DaemonSetModel, LEGACY_QGS_DAEMONSET_NAME),
+  ]);
+  return summarizeLegacyTdxInfra(pccs, pccsError, qgs, qgsError);
+};
 
 type PrereqStatus = 'ok' | 'warn' | 'info';
 const PrereqIcon: FC<{ status: PrereqStatus }> = ({ status }) => {
@@ -135,16 +194,31 @@ interface Props {
  */
 const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const [canCreateTqgs, tqgsRbacLoading] = useCanCreateTqgs();
+  const [canCreateTqgs, tqgsCreateRbacLoading] = useCanCreateTqgs();
+  const [canPatchTqgs, tqgsPatchRbacLoading] = useCanPatchTqgs();
   const [canCreateSecret, secretRbacLoading] = useCanCreateDcapSecret(
     INTEL_DCAP_OPERATOR_NAMESPACE,
   );
 
   const [apiKey, setApiKey] = useState('');
-  const [nodeSelector, setNodeSelector] = useState(DEFAULT_TQGS_NODE_SELECTOR);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [started, setStarted] = useState(false);
+
+  // Operator + CR state. The CRD watch doubles as the "operator installed" signal;
+  // the CR is only watchable once the CRD exists. 404s read as "absent".
+  const { cr, crdInstalled, crdAccessDenied, crAccessDenied } = useTdxQuoteGenerationService();
+  const summary = summarizeTqgs(cr, crdInstalled);
+  const crExists = Boolean(cr?.metadata);
+
+  // The node selector input. When an existing CR is loaded, its first selector
+  // is shown until the user edits the field; `userEdited` gates the override.
+  const crSelectors = useMemo(() => cr?.spec?.nodeSelector ?? [], [cr?.spec?.nodeSelector]);
+  const [userEdited, setUserEdited] = useState(false);
+  const [nodeSelector, setNodeSelector] = useState(DEFAULT_TQGS_NODE_SELECTOR);
+  const displaySelector = !userEdited && crSelectors.length > 0 ? crSelectors[0] : nodeSelector;
+  const selectorDirty =
+    crExists && displaySelector !== (crSelectors[0] ?? DEFAULT_TQGS_NODE_SELECTOR);
 
   // Node capabilities, detected live from NFD labels + allocatable resources.
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
@@ -158,22 +232,18 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const sgxCapableOk = tdxNodes.length > 0 && tdxNodes.every(sgxCapable);
   const sgxPluginReady = tdxNodes.length > 0 && tdxNodes.some(sgxDevicePluginReady);
   // Live feedback on the node selector the QGS DaemonSet will schedule onto.
-  const selectorOk = nodeSelectorValid(nodeSelector);
+  const selectorOk = nodeSelectorValid(displaySelector);
   const selectorMatches = useMemo(
-    () => nodesMatchingSelector(nodes ?? [], nodeSelector).length,
-    [nodes, nodeSelector],
+    () => nodesMatchingSelector(nodes ?? [], displaySelector).length,
+    [nodes, displaySelector],
   );
-
-  // Operator + CR state. The CRD watch doubles as the "operator installed" signal;
-  // the CR is only watchable once the CRD exists. 404s read as "absent".
-  const { cr, crdInstalled } = useTdxQuoteGenerationService();
-  const summary = summarizeTqgs(cr, crdInstalled);
-  const crExists = Boolean(cr?.metadata);
 
   // The Intel PCS API key Secret the operator's registrar reads. Only its shape
   // is inspected — the key value is never read back or displayed — and a Secret
   // that exists but lacks the api-key data key does not count as configured.
-  const [pcsSecret] = useK8sWatchResource<SecretKind>(
+  // The watch only runs once the CRD is established; `secretState` keeps an
+  // unstarted, unsettled, forbidden or errored watch from reading as absence.
+  const [pcsSecret, , pcsSecretError] = useK8sWatchResource<SecretKind>(
     crdInstalled
       ? {
           groupVersionKind: SecretGVK,
@@ -182,22 +252,53 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
         }
       : null,
   ) as [SecretKind | undefined, boolean, unknown];
-  const secretPresent = Boolean(pcsSecret?.metadata?.name);
-  const secretValid = pcsApiKeySecretValid(pcsSecret);
+  const secretState = pcsSecretWatchState(crdInstalled, pcsSecret, pcsSecretError);
+  const secretPresent = secretState === 'valid' || secretState === 'invalid';
+  const secretValid = secretState === 'valid';
   // With a present-but-malformed Secret, typing a new key cannot help (an
   // existing Secret is never overwritten from here), so it must be fixed first.
-  const valid = secretPresent ? secretValid : apiKey.trim() !== '';
+  // An unreadable or unwatchable Secret cannot be verified — fail closed. Only a
+  // confirmed absence (404) accepts a typed key. A valid Secret (keyless counts)
+  // passes.
+  const valid = secretValid || (secretState === 'absent' && apiKey.trim() !== '');
 
   // Obsolete OSC 1.12 infrastructure — blocks the new installation. 'unknown'
   // (e.g. no read access to the legacy intel-dcap namespace) blocks too: the
   // wizard must not deploy alongside a legacy stack it failed to rule out.
+  // The watches can lag behind cluster-side cleanup, so a fresh "Recheck
+  // prerequisites" overrides the watch until the watch moves off the stale
+  // value — stale 'present' data must not re-block a recheck that confirmed
+  // absence.
   const legacy = useLegacyTdxAttestationInfra();
+  const [legacyRecheck, setLegacyRecheck] = useState<LegacyRecheck | null>(null);
+  const legacyStatus = effectiveLegacyStatus(legacy.status, legacyRecheck);
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const onRecheckPrerequisites = async () => {
+    setRecheckBusy(true);
+    try {
+      setLegacyRecheck({ status: await recheckLegacyTdxInfra(), staleWatch: legacy.status });
+    } finally {
+      setRecheckBusy(false);
+    }
+  };
   const prereqsMet = tdxNodeCount > 0 && sgxCapableOk && sgxPluginReady;
+
+  /** Fresh pre-deployment safety check: both legacy resources must be confirmed
+   *  absent (fresh GETs, not the possibly-stale watch) right before deploying. */
+  const checkLegacyAbsent = async (): Promise<boolean> =>
+    (await recheckLegacyTdxInfra()) === 'absent';
 
   const onDeploy = async () => {
     setBusy(true);
     setError('');
     try {
+      // Fresh check: watches can lag during namespace termination.
+      if (!(await checkLegacyAbsent())) {
+        setError(
+          t('The obsolete PCCS/QGS infrastructure is still present. Remove it before deploying.'),
+        );
+        return;
+      }
       // 1. The Intel PCS API key Secret (only when absent — an existing key is
       //    never overwritten from here). The key travels in the Secret payload
       //    only; it is not logged or echoed anywhere.
@@ -216,12 +317,58 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
       try {
         await k8sCreate({
           model: TdxQuoteGenerationServiceModel,
-          data: buildTdxQuoteGenerationService({ nodeSelector }),
+          data: buildTdxQuoteGenerationService({ nodeSelector: displaySelector }),
         });
       } catch (e) {
         if (!isAlreadyExists(e)) throw e;
       }
       setStarted(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Trigger re-reconciliation of an existing failed CR via an annotation patch. */
+  const onRetry = async () => {
+    if (!cr?.metadata) return;
+    setBusy(true);
+    setError('');
+    try {
+      await k8sPatch({
+        model: TdxQuoteGenerationServiceModel,
+        resource: cr,
+        data: [
+          {
+            op: 'add',
+            path: '/metadata/annotations',
+            value: {
+              ...(cr.metadata.annotations ?? {}),
+              'coco-plugin/retry': new Date().toISOString(),
+            },
+          },
+        ],
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const multiSelector = crSelectors.length > 1;
+
+  const onApplyChanges = async () => {
+    if (!cr?.metadata || multiSelector) return;
+    setBusy(true);
+    setError('');
+    try {
+      await k8sPatch({
+        model: TdxQuoteGenerationServiceModel,
+        resource: cr,
+        data: [{ op: 'replace', path: '/spec/nodeSelector', value: [displaySelector.trim()] }],
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -270,7 +417,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
           >
             <p>
               {t(
-                'The Intel TDX DCAP operator is running the quote generation service — the QGS is ready on {{ready}}/{{desired}} node(s). Intel TDX pods can now produce a signed quote.',
+                'The Intel TDX DCAP operator is running the quote generation service — the QGS is ready on {{ready}}/{{desired}} node(s). Intel TDX pods can now produce a signed quote. If Online platform registration is configured, verify registration status in the registrar pod logs.',
                 { ready: summary.ready, desired: summary.desired },
               )}
             </p>
@@ -306,7 +453,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
           )}
         </Alert>
 
-        {legacy.status === 'present' && (
+        {legacyStatus === 'present' && (
           <Alert
             variant="danger"
             isInline
@@ -334,9 +481,19 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                 {t('Migration procedure in the documentation')}
               </Button>
             </div>
+            <div>
+              <Button
+                variant="link"
+                isInline
+                isLoading={recheckBusy}
+                onClick={() => void onRecheckPrerequisites()}
+              >
+                {t('Recheck prerequisites')}
+              </Button>
+            </div>
           </Alert>
         )}
-        {legacy.loaded && legacy.status === 'unknown' && (
+        {legacyStatus === 'unknown' && (legacy.loaded || legacyRecheck !== null) && (
           <Alert
             variant="warning"
             isInline
@@ -346,6 +503,32 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
             <p>
               {t(
                 'The plugin cannot determine whether the OpenShift sandboxed containers 1.12 PCCS/QGS stack is still deployed — typically because this account is not allowed to read the intel-dcap namespace. Deploying is blocked until that is ruled out, because the two setups conflict. Verify manually (for example: oc get deployment pccs -n intel-dcap and oc get daemonset tdx-qgs -n intel-dcap), and grant read access to the namespace if you manage this account.',
+              )}
+            </p>
+            <div className={`${PREFIX}__mt`}>
+              <Button
+                variant="link"
+                isInline
+                isLoading={recheckBusy}
+                onClick={() => void onRecheckPrerequisites()}
+              >
+                {t('Recheck prerequisites')}
+              </Button>
+            </div>
+          </Alert>
+        )}
+
+        {crAccessDenied && (
+          <Alert
+            variant="warning"
+            isInline
+            title={t('Cannot determine whether attestation infrastructure is deployed')}
+            className={`${PREFIX}__mb`}
+          >
+            <p>
+              {t(
+                'Your account does not have permission to read the TdxQuoteGenerationService {{cr}}. The guided setup cannot determine whether the attestation infrastructure is already deployed, so deploying is blocked. Ask a cluster administrator.',
+                { cr: TQGS_CR_NAME },
               )}
             </p>
           </Alert>
@@ -370,13 +553,17 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                   ? t(
                       'Installed — its TdxQuoteGenerationService custom resource definition is established.',
                     )
-                  : t(
-                      'Not installed. Install it from OperatorHub into the {{namespace}} namespace (installation mode OwnNamespace). The guided setup cannot continue without it.',
-                      { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
-                    )
+                  : crdAccessDenied
+                    ? t(
+                        'Cannot determine whether the operator is installed — your account does not have permission to read custom resource definitions. Ask a cluster administrator.',
+                      )
+                    : t(
+                        'Not installed. Install it from OperatorHub into the {{namespace}} namespace (installation mode OwnNamespace). The guided setup cannot continue without it.',
+                        { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                      )
               }
               action={
-                crdInstalled ? undefined : (
+                crdInstalled || crdAccessDenied ? undefined : (
                   <Button
                     variant="secondary"
                     component="a"
@@ -439,7 +626,48 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
 
         <Form>
           <FormGroup label={t('Intel PCS API key')} isRequired fieldId="pccs-api-key">
-            {secretPresent ? (
+            {secretState === 'forbidden' || secretState === 'unwatched' ? (
+              <Alert
+                variant="warning"
+                isInline
+                title={t('Cannot verify PCS API key Secret configuration')}
+              >
+                <p>
+                  {secretState === 'forbidden'
+                    ? t(
+                        'Your account does not have permission to read the {{secret}} Secret in {{namespace}}. The guided setup cannot verify whether it is correctly configured. Ask a cluster administrator to verify the Secret carries the api-key data key, or grant read access to this Secret.',
+                        {
+                          secret: TQGS_PCS_API_KEY_SECRET_NAME,
+                          namespace: INTEL_DCAP_OPERATOR_NAMESPACE,
+                        },
+                      )
+                    : t(
+                        'The guided setup cannot verify the {{secret}} Secret in {{namespace}} until the Intel TDX DCAP operator installation can be determined. Ask a cluster administrator.',
+                        {
+                          secret: TQGS_PCS_API_KEY_SECRET_NAME,
+                          namespace: INTEL_DCAP_OPERATOR_NAMESPACE,
+                        },
+                      )}
+                </p>
+              </Alert>
+            ) : secretState === 'error' ? (
+              <Alert
+                variant="warning"
+                isInline
+                title={t('Cannot verify PCS API key Secret configuration')}
+              >
+                <p>
+                  {t('The {{secret}} Secret in {{namespace}} could not be read: {{message}}', {
+                    secret: TQGS_PCS_API_KEY_SECRET_NAME,
+                    namespace: INTEL_DCAP_OPERATOR_NAMESPACE,
+                    message:
+                      pcsSecretError instanceof Error
+                        ? pcsSecretError.message
+                        : String(pcsSecretError),
+                  })}
+                </p>
+              </Alert>
+            ) : secretPresent ? (
               secretValid ? (
                 <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapSm' }}>
                   <FlexItem>
@@ -472,7 +700,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                   </p>
                 </Alert>
               )
-            ) : (
+            ) : secretState === 'absent' && canCreateSecret ? (
               <>
                 <TextInput
                   id="pccs-api-key"
@@ -495,7 +723,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                   </HelperText>
                 </FormHelperText>
               </>
-            )}
+            ) : null}
             <Button
               variant="link"
               isInline
@@ -512,12 +740,24 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
           </FormGroup>
 
           <FormGroup label={t('QGS node selector')} fieldId="tqgs-node-selector" isRequired>
+            {crSelectors.length > 1 && (
+              <Content component="small" className={`${PREFIX}__muted ${PREFIX}__mb`}>
+                {t(
+                  'The existing configuration has {{count}} selectors: {{selectors}}. Only the first is editable here — use the resource editor for multi-selector changes.',
+                  {
+                    count: crSelectors.length,
+                    selectors: crSelectors.join(', '),
+                  },
+                )}
+              </Content>
+            )}
             <TextInput
               id="tqgs-node-selector"
-              value={nodeSelector}
-              isDisabled={started}
-              validated={selectorOk || nodeSelector === '' ? 'default' : 'error'}
+              value={displaySelector}
+              isDisabled={started && !crExists}
+              validated={selectorOk || displaySelector === '' ? 'default' : 'error'}
               onChange={(_e, v) => {
+                setUserEdited(true);
                 setNodeSelector(v);
               }}
             />
@@ -582,7 +822,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
               hoverTip={t('Copy')}
               clickTip={t('Copied')}
             >
-              {buildTdxSetupManualScript({ nodeSelector })}
+              {buildTdxSetupManualScript({ nodeSelector: displaySelector })}
             </ClipboardCopy>
           </ExpandableSection>
 
@@ -632,25 +872,29 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                         ready: summary.ready,
                         desired: summary.desired,
                       })
-                    : summary.zeroNodes
-                      ? t(
-                          'The operator reports zero scheduled QGS pods — no node matches the node selector.',
-                        )
-                      : !summary.statusObserved
+                    : summary.phase === 'failed'
+                      ? t('Reconciliation failed — {{message}}', {
+                          message: summary.message ?? t('see the resource for details.'),
+                        })
+                      : summary.zeroNodes
                         ? t(
-                            'Waiting for the Intel TDX DCAP operator to report status — if this persists, check the operator pod in {{namespace}}.',
-                            { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                            'The operator reports zero scheduled QGS pods — no node matches the node selector.',
                           )
-                        : summary.staleStatus
+                        : !summary.statusObserved
                           ? t(
-                              'Configuration changed — the operator is re-reconciling the QGS DaemonSet.',
+                              'Waiting for the Intel TDX DCAP operator to report status — if this persists, check the operator pod in {{namespace}}.',
+                              { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
                             )
-                          : crExists
-                            ? t('Rolling out: {{ready}}/{{desired}} node(s) ready.', {
-                                ready: summary.ready,
-                                desired: summary.desired,
-                              })
-                            : t('Runs on each selected node once the custom resource is created.')
+                          : summary.staleStatus
+                            ? t(
+                                'Configuration changed — the operator is re-reconciling the QGS DaemonSet.',
+                              )
+                            : crExists
+                              ? t('Rolling out: {{ready}}/{{desired}} node(s) ready.', {
+                                  ready: summary.ready,
+                                  desired: summary.desired,
+                                })
+                              : t('Runs on each selected node once the custom resource is created.')
                 }
               >
                 {t('QGS quote service running')}
@@ -663,7 +907,9 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
                   aria-label={t('Platform registration')}
                   description={
                     summary.phase === 'ready' || summary.registrationReady === true
-                      ? t('The registrar registered your platforms with the Intel PCS.')
+                      ? t(
+                          'The registrar Deployment is available — verify registration in the registrar pod logs if attestation fails.',
+                        )
                       : t(
                           'Registers the platform(s) with the Intel Provisioning Certification Service.',
                         )
@@ -717,30 +963,50 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
             </Alert>
           )}
         </Form>
-        <PermissionHint allowed={canCreateTqgs} loading={tqgsRbacLoading} />
-        {!secretPresent && <PermissionHint allowed={canCreateSecret} loading={secretRbacLoading} />}
+        {!crExists && <PermissionHint allowed={canCreateTqgs} loading={tqgsCreateRbacLoading} />}
+        {crExists && selectorDirty && (
+          <PermissionHint allowed={canPatchTqgs} loading={tqgsPatchRbacLoading} />
+        )}
+        {secretState === 'absent' && (
+          <PermissionHint allowed={canCreateSecret} loading={secretRbacLoading} />
+        )}
       </ModalBody>
       <ModalFooter>
         {summary.phase === 'ready' ? (
-          <Button variant="primary" onClick={onClose}>
-            {t('Done')}
-          </Button>
+          <>
+            {selectorDirty && (
+              <Button
+                variant="primary"
+                onClick={() => void onApplyChanges()}
+                isLoading={busy}
+                isDisabled={
+                  !selectorOk || busy || multiSelector || tqgsPatchRbacLoading || !canPatchTqgs
+                }
+              >
+                {t('Apply changes')}
+              </Button>
+            )}
+            <Button variant={selectorDirty ? 'secondary' : 'primary'} onClick={onClose}>
+              {t('Done')}
+            </Button>
+          </>
         ) : (
           <>
             <Button
               variant="primary"
-              onClick={() => void onDeploy()}
+              onClick={() => void (summary.phase === 'failed' ? onRetry() : onDeploy())}
               isLoading={busy || deploying}
               isDisabled={
                 !valid ||
                 !selectorOk ||
                 !crdInstalled ||
-                legacy.status !== 'absent' ||
+                crAccessDenied ||
+                legacyStatus !== 'absent' ||
                 busy ||
                 deploying ||
-                tqgsRbacLoading ||
+                tqgsCreateRbacLoading ||
                 !canCreateTqgs ||
-                (!secretPresent && (secretRbacLoading || !canCreateSecret))
+                (secretState === 'absent' && (secretRbacLoading || !canCreateSecret))
               }
             >
               {error || summary.phase === 'failed'

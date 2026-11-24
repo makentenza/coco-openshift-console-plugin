@@ -115,7 +115,11 @@ const CocoSetup: FC = () => {
   // counts), never from the CR's mere existence. Also detect the obsolete OSC 1.12
   // manually deployed PCCS/QGS stack, which must be migrated before the operator
   // flow works — that detection is warning-only; nothing is deleted automatically.
-  const { cr: tqgsCr, crdInstalled: tqgsCrdInstalled } = useTdxQuoteGenerationService();
+  const {
+    cr: tqgsCr,
+    crdInstalled: tqgsCrdInstalled,
+    crAccessDenied: tqgsCrAccessDenied,
+  } = useTdxQuoteGenerationService();
   const legacy = useLegacyTdxAttestationInfra();
   const tqgs = summarizeTqgs(tqgsCr, tqgsCrdInstalled);
   const attestPresent = tqgsCr !== undefined;
@@ -237,7 +241,13 @@ const CocoSetup: FC = () => {
       // For Intel TDX this is live (TdxQuoteGenerationService status watched). It is
       // the most commonly-missed prerequisite — without it every attestation fails
       // with an empty quote — so when it is absent we flag it as a warning.
-      status: attestReady ? 'done' : attestPresent && tqgs.phase !== 'failed' ? 'info' : 'warn',
+      status: attestReady
+        ? 'done'
+        : tqgsCrAccessDenied
+          ? 'warn'
+          : attestPresent && tqgs.phase !== 'failed'
+            ? 'info'
+            : 'warn',
       detail: attestReady ? (
         <>
           {t(
@@ -278,40 +288,44 @@ const CocoSetup: FC = () => {
         </>
       ) : (
         <>
-          {attestPresent
-            ? tqgs.phase === 'failed'
-              ? t(
-                  'Intel TDX attestation reconciliation failed: {{message}} Open the custom resource for details.',
-                  { message: tqgs.message ?? '' },
-                )
-              : qgsBlockedOnSgx
+          {tqgsCrAccessDenied
+            ? t(
+                'Cannot determine whether Intel TDX attestation infrastructure is deployed — your account does not have permission to read the TdxQuoteGenerationService. Ask a cluster administrator.',
+              )
+            : attestPresent
+              ? tqgs.phase === 'failed'
                 ? t(
-                    'The QGS DaemonSet is Pending: the Intel SGX device plugin is not advertising sgx.intel.com/enclave + /provision yet. Open the setup to install it (TDX quotes are signed by an SGX enclave).',
+                    'Intel TDX attestation reconciliation failed: {{message}} Open the custom resource for details.',
+                    { message: tqgs.message ?? '' },
                   )
-                : tqgs.zeroNodes
+                : qgsBlockedOnSgx
                   ? t(
-                      'The Intel TDX DCAP operator reconciled the service but scheduled the QGS on zero nodes — no node matches its node selector.',
+                      'The QGS DaemonSet is Pending: the Intel SGX device plugin is not advertising sgx.intel.com/enclave + /provision yet. Open the setup to install it (TDX quotes are signed by an SGX enclave).',
                     )
-                  : !tqgs.statusObserved
+                  : tqgs.zeroNodes
                     ? t(
-                        'The Intel TDX DCAP operator has not reported status yet — if this persists, check the operator pod in {{namespace}}.',
-                        { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                        'The Intel TDX DCAP operator reconciled the service but scheduled the QGS on zero nodes — no node matches its node selector.',
                       )
-                    : tqgs.staleStatus
+                    : !tqgs.statusObserved
                       ? t(
-                          'The TdxQuoteGenerationService configuration changed — the Intel TDX DCAP operator is re-reconciling the QGS DaemonSet.',
+                          'The Intel TDX DCAP operator has not reported status yet — if this persists, check the operator pod in {{namespace}}.',
+                          { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
                         )
-                      : t(
-                          'The Intel TDX DCAP operator is deploying the QGS ({{ready}}/{{desired}} node(s) ready). It completes once the QGS DaemonSet is running on your TDX nodes.',
-                          { ready: tqgs.ready, desired: tqgs.desired },
-                        )
-            : tqgsCrdInstalled
-              ? t(
-                  'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
-                )
-              : t(
-                  'Attestation needs the host quote-generation stack for your TEE, provided by the Intel TDX DCAP operator — install it from OperatorHub (the guided setup links there) and create its TdxQuoteGenerationService:',
-                )}
+                      : tqgs.staleStatus
+                        ? t(
+                            'The TdxQuoteGenerationService configuration changed — the Intel TDX DCAP operator is re-reconciling the QGS DaemonSet.',
+                          )
+                        : t(
+                            'The Intel TDX DCAP operator is deploying the QGS ({{ready}}/{{desired}} node(s) ready). It completes once the QGS DaemonSet is running on your TDX nodes.',
+                            { ready: tqgs.ready, desired: tqgs.desired },
+                          )
+              : tqgsCrdInstalled
+                ? t(
+                    'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
+                  )
+                : t(
+                    'Attestation needs the host quote-generation stack for your TEE, provided by the Intel TDX DCAP operator — install it from OperatorHub (the guided setup links there) and create its TdxQuoteGenerationService:',
+                  )}
           {legacy.status === 'present' && (
             <div className="coco-openshift-console-plugin__mt">
               <strong>
@@ -366,39 +380,17 @@ const CocoSetup: FC = () => {
           </ul>
         </>
       ),
-      node: (
-        <Flex
-          direction={{ default: 'column' }}
-          gap={{ default: 'gapSm' }}
-          alignItems={{ default: 'alignItemsFlexEnd' }}
-        >
-          {teeKinds.tdx && (
-            <FlexItem>
-              <Button
-                variant={attestReady ? 'secondary' : 'primary'}
-                onClick={() => {
-                  setTdxSetupOpen(true);
-                }}
-              >
-                {attestReady ? t('Reconfigure TDX attestation') : t('Set up Intel TDX attestation')}
-              </Button>
-            </FlexItem>
-          )}
-          <FlexItem>
-            <Button
-              variant="link"
-              component="a"
-              href="https://github.com/confidential-devhub/veritas"
-              target="_blank"
-              rel="noopener noreferrer"
-              icon={<ExternalLinkAltIcon />}
-              iconPosition="end"
-            >
-              {t('Bare-metal attestation reference values (veritas)')}
-            </Button>
-          </FlexItem>
-        </Flex>
-      ),
+      node:
+        teeKinds.tdx && !tqgsCrAccessDenied ? (
+          <Button
+            variant={attestReady ? 'secondary' : 'primary'}
+            onClick={() => {
+              setTdxSetupOpen(true);
+            }}
+          >
+            {attestReady ? t('Reconfigure TDX attestation') : t('Set up Intel TDX attestation')}
+          </Button>
+        ) : undefined,
     });
   }
 
@@ -494,7 +486,11 @@ const CocoSetup: FC = () => {
                     justifyContent={{ default: 'justifyContentSpaceBetween' }}
                   >
                     <FlexItem grow={{ default: 'grow' }}>
-                      <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapSm' }}>
+                      <Flex
+                        alignItems={{ default: 'alignItemsCenter' }}
+                        gap={{ default: 'gapSm' }}
+                        flexWrap={{ default: 'nowrap' }}
+                      >
                         <FlexItem>
                           <StatusIcon status={step.status} />
                         </FlexItem>

@@ -34,6 +34,7 @@ import {
   nodeSelectorValid,
   parseNodeSelector,
   pcsApiKeySecretValid,
+  pcsSecretWatchState,
   summarizeLegacyTdxInfra,
   summarizeTqgs,
   TQGS_MAX_NODE_SELECTORS,
@@ -471,6 +472,19 @@ describe('summarizeLegacyTdxInfra', () => {
     expect(summarizeLegacyTdxInfra(undefined, undefined, undefined, undefined)).toBe('unknown');
     expect(summarizeLegacyTdxInfra(undefined, { code: 404 }, undefined, undefined)).toBe('unknown');
   });
+
+  it('treats a resource with deletionTimestamp as still present (fail closed)', () => {
+    const terminating: DeploymentKind = {
+      metadata: {
+        name: 'pccs',
+        namespace: 'intel-dcap',
+        deletionTimestamp: '2026-11-24T00:00:00Z',
+      },
+    };
+    expect(summarizeLegacyTdxInfra(terminating, undefined, undefined, { code: 404 })).toBe(
+      'present',
+    );
+  });
 });
 
 // ---- existing PCS API key Secret shape (existence alone is not configuration) ----
@@ -500,6 +514,38 @@ describe('pcsApiKeySecretValid', () => {
   it('rejects an absent Secret', () => {
     expect(pcsApiKeySecretValid(undefined)).toBe(false);
     expect(pcsApiKeySecretValid(secret(undefined))).toBe(false);
+  });
+});
+
+// ---- PCS API key Secret watch state (R1: unstarted ≠ absent, fail closed) ----
+
+describe('pcsSecretWatchState', () => {
+  const secret = (data?: Record<string, string>): SecretKind => ({
+    metadata: { name: TQGS_PCS_API_KEY_SECRET_NAME, namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+    data,
+  });
+
+  it('an unstarted watch (CRD unreadable) is unwatched — never absence', () => {
+    expect(pcsSecretWatchState(false, undefined, undefined)).toBe('unwatched');
+  });
+
+  it('a started but unsettled watch is loading — never absence', () => {
+    expect(pcsSecretWatchState(true, undefined, undefined)).toBe('loading');
+  });
+
+  it('classifies a readable Secret by its shape (keyless counts as valid)', () => {
+    expect(pcsSecretWatchState(true, secret({ 'api-key': '' }), undefined)).toBe('valid');
+    expect(pcsSecretWatchState(true, secret({ 'other-key': 'eA==' }), undefined)).toBe('invalid');
+  });
+
+  it('only a 404 confirms absence', () => {
+    expect(pcsSecretWatchState(true, undefined, { code: 404 })).toBe('absent');
+  });
+
+  it('403 and any other read failure stay fail-closed', () => {
+    expect(pcsSecretWatchState(true, undefined, { code: 403 })).toBe('forbidden');
+    expect(pcsSecretWatchState(true, undefined, { code: 500 })).toBe('error');
+    expect(pcsSecretWatchState(true, undefined, new Error('network'))).toBe('error');
   });
 });
 
